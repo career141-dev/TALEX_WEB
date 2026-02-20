@@ -1,23 +1,66 @@
+version: '3.9'
+
 services:
   postgres:
     image: postgres:15-alpine
-    container_name: talex_postgres
-    restart: always
+    container_name: talex-postgres
+    restart: unless-stopped
     environment:
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: password
-      POSTGRES_DB: talex_db
+      POSTGRES_USER: ${POSTGRES_USER:-talex}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-talex_dev_password}
+      POSTGRES_DB: ${POSTGRES_DB:-talex_db}
     ports:
       - "5434:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
+    networks:
+      - talex-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U talex"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
 
   redis:
-    image: redis:alpine
-    container_name: talex_redis
-    restart: always
+    image: redis:7-alpine
+    container_name: talex-redis
+    command: redis-server --requirepass ${REDIS_PASSWORD:-talex_redis_dev}
     ports:
       - "6379:6379"
+    volumes:
+      - redis_data:/data
+    networks:
+      - talex-network
+
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile.dev
+    container_name: talex-backend
+    restart: unless-stopped
+    environment:
+      NODE_ENV: development
+      DATABASE_URL: postgresql://talex:talex_dev_password@postgres:5432/talex_db
+      REDIS_URL: redis://:talex_redis_dev@redis:6379
+      JWT_SECRET: ${JWT_SECRET:-your-super-secret}
+      JWT_REFRESH_SECRET: ${JWT_REFRESH_SECRET:-your-refresh-secret}
+      PORT: 5000
+    ports:
+      - "5000:5000"
+    volumes:
+      - .:/app
+      - /app/node_modules
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - talex-network
+    command: npm run dev
 
 volumes:
   postgres_data:
+  redis_data:
+
+networks:
+  talex-network:
+    driver: bridge
