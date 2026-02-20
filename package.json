@@ -14,7 +14,7 @@
   "license": "ISC",
   "description": "",
   "dependencies": {
-    "@prisma/client": "^7.4.1",
+    "@prisma/client": "6.19.2",
     "bcryptjs": "^3.0.3",
     "cors": "^2.8.6",
     "dotenv": "^17.3.1",
@@ -24,7 +24,7 @@
     "ioredis": "^5.9.3",
     "jsonwebtoken": "^9.0.3",
     "rate-limit-redis": "^4.3.1",
-    "uuid": "^13.0.0",
+    "uuid": "9.0.1",
     "zod": "^4.3.6"
   },
   "devDependencies": {
@@ -35,8 +35,9 @@
     "@types/jsonwebtoken": "^9.0.10",
     "@types/node": "^25.3.0",
     "@types/supertest": "^6.0.3",
+    "@types/uuid": "9.0.8",
     "jest": "^30.2.0",
-    "prisma": "^7.4.1",
+    "prisma": "6.19.2",
     "supertest": "^7.2.2",
     "ts-jest": "^29.4.6",
     "ts-node-dev": "^2.0.0",

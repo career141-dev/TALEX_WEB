@@ -1,7 +1,9 @@
 import dotenv from 'dotenv';
 import { z } from 'zod';
+import path from 'path';
 
-dotenv.config();
+const envPath = path.resolve(process.cwd(), '.env');
+dotenv.config({ path: envPath });
 
 const envSchema = z.object({
     PORT: z.string().default('5000'),
@@ -15,8 +17,8 @@ const envSchema = z.object({
 const parsedEnv = envSchema.safeParse(process.env);
 
 if (!parsedEnv.success) {
-    console.error('❌ Invalid environment variables:', parsedEnv.error.format());
-    process.exit(1);
+    console.error('❌ Invalid environment variables:', JSON.stringify(parsedEnv.error.format(), null, 2));
+    throw new Error('Environment validation failed');
 }
 
 export const config = parsedEnv.data;
