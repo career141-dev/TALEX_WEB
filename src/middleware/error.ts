@@ -1,3 +1,6 @@
+/**
+ * Global error handling middleware for the Express application.
+ */
 import { Request, Response, NextFunction } from 'express';
 import { config } from '../config/env';
 
