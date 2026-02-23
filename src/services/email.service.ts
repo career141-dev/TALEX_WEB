@@ -1,0 +1,2 @@
+// Email service placeholder
+export { };

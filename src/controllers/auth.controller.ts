@@ -1,0 +1,2 @@
+// Auth controller placeholder
+export { };

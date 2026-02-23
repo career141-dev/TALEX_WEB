@@ -1,6 +1,3 @@
-// This is your Prisma schema file,
-// learn more about it in the docs: https://pris.ly/d/prisma-schema
-
 generator client {
   provider = "prisma-client-js"
 }
@@ -11,25 +8,87 @@ datasource db {
 }
 
 model User {
-  id                String         @id @default(uuid())
-  email             String         @unique
-  name              String?
-  password          String
-  role              String         @default("user") // admin, user
-  isVerified        Boolean        @default(false)
-  verificationToken String?
-  createdAt         DateTime       @default(now())
-  updatedAt         DateTime       @updatedAt
-  applications      Application[]
+  id                  String        @id @default(uuid())
+  firstName           String
+  lastName            String
+  email               String        @unique
+  password_hash       String
+  company             String
+  designation         String
+  phone               String?
+  profileImage        String?
+  bio                 String?
+  role                Role          @default(CANDIDATE)
+  is_verified         Boolean       @default(false)
+  is_active           Boolean       @default(true)
+  is_locked           Boolean       @default(false)
+  lock_reason         String?
+  last_login_at       DateTime?
+  login_attempts      Int           @default(0)
+  last_failed_login   DateTime?
+  password_changed_at DateTime?
+  created_at          DateTime      @default(now())
+  updated_at          DateTime      @updatedAt
+  applications        Application[]
+  auditLogs           AuditLog[]
+  emailTokens         EmailToken[]
+
+  @@index([email])
+  @@map("users")
 }
 
 model Application {
-  id            String   @id @default(uuid())
-  title         String
-  description   String
-  status        String   @default("pending") // pending, approved, rejected
-  userId        String
-  user          User     @relation(fields: [userId], references: [id])
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
+  id          String   @id @default(uuid())
+  title       String
+  description String
+  status      String   @default("pending")
+  userId      String
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  user        User     @relation(fields: [userId], references: [id])
+
+  @@map("applications")
+}
+
+model EmailToken {
+  id         String    @id @default(uuid())
+  user_id    String
+  token      String    @unique @default(uuid())
+  type       TokenType
+  expires_at DateTime
+  used_at    DateTime?
+  created_at DateTime  @default(now())
+  user       User      @relation(fields: [user_id], references: [id], onDelete: Cascade)
+
+  @@index([user_id])
+  @@index([token])
+  @@map("email_tokens")
+}
+
+model AuditLog {
+  id          String   @id @default(uuid())
+  user_id     String?
+  action      String
+  entity_type String?
+  entity_id   String?
+  ip_address  String?
+  user_agent  String?
+  metadata    Json?
+  created_at  DateTime @default(now())
+  user        User?    @relation(fields: [user_id], references: [id])
+
+  @@index([user_id])
+  @@index([created_at])
+  @@map("audit_logs")
+}
+
+enum Role {
+  CANDIDATE
+  ADMIN
+  JUDGE
+}
+
+enum TokenType {
+  EMAIL_VERIFY
+  PASSWORD_RESET
 }
