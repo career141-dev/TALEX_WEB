@@ -10,6 +10,7 @@ datasource db {
 // USER MODEL - Complete with all security fields
 model User {
   id                  String        @id @default(uuid())
+  supabase_uid        String?       @unique @map("supabase_uid")
   firstName           String        @map("first_name")
   lastName            String        @map("last_name")
   email               String        @unique

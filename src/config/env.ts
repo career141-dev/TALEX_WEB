@@ -11,7 +11,14 @@ const envSchema = z.object({
     FRONTEND_URL: z.string().url(),
     DATABASE_URL: z.string().url(),
     REDIS_URL: z.string().url(),
+    SUPABASE_URL: z.string().url(),
+    SUPABASE_ANON_KEY: z.string(),
+    SUPABASE_SERVICE_KEY: z.string(),
     JWT_SECRET: z.string().min(32, 'JWT_SECRET must be at least 32 characters long'),
+    JWT_REFRESH_SECRET: z.string().optional(),
+    BREVO_API_KEY: z.string().optional(),
+    FROM_EMAIL: z.string().email().optional(),
+    FROM_NAME: z.string().default('Talex Awards'),
 });
 
 const parsedEnv = envSchema.safeParse(process.env);
