@@ -1,14 +1,12 @@
 import { Request, Response } from 'express';
+import crypto from 'crypto';
 import bcrypt from 'bcryptjs';
-import { PrismaClient } from '@prisma/client';
+import prisma from '../lib/prisma';
 import { supabase, supabaseAdmin } from '../config/supabase';
 import { emailService } from '../services/email.service';
-import { tokenService } from '../services/token.service';
 import { auditService } from '../services/audit.service';
 import { SECURITY_CONFIG, ROLES } from '../utils/constants';
 import { AuthRequest } from '../middleware/auth.middleware';
-
-const prisma = new PrismaClient();
 
 class AuthController {
     // 1. Register — Ghost-Account-Safe with Anti-Enumeration
@@ -21,16 +19,16 @@ class AuthController {
             message: 'If this email is new, a verification code has been sent.',
         };
 
-        // Silently check for existing user — do NOT reveal if email exists
-        const existingUser = await prisma.user.findUnique({ where: { email } });
-        if (existingUser) {
-            res.status(201).json(NEUTRAL_RESPONSE);
-            return;
-        }
-
         let supabaseUserId: string | null = null;
 
         try {
+            // Silently check for existing user — do NOT reveal if email exists
+            const existingUser = await prisma.user.findUnique({ where: { email } });
+            if (existingUser) {
+                res.status(201).json(NEUTRAL_RESPONSE);
+                return;
+            }
+
             // Step 1: Create in Supabase Auth via admin (skips Supabase's own email confirmation)
             const { data: sbData, error: sbError } = await supabaseAdmin.auth.admin.createUser({
                 email,
@@ -66,8 +64,8 @@ class AuthController {
                 },
             });
 
-            // Step 4: Generate 6-digit OTP and store it
-            const otp = Math.floor(100000 + Math.random() * 900000).toString();
+            // Step 4: Generate cryptographically secure 6-digit OTP
+            const otp = crypto.randomInt(100000, 999999).toString();
             const expiresAt = new Date();
             expiresAt.setHours(expiresAt.getHours() + SECURITY_CONFIG.OTP_EXPIRY_HOURS);
 
@@ -80,16 +78,21 @@ class AuthController {
                 },
             });
 
-            // Step 5: Send OTP via Brevo
-            await emailService.sendVerificationEmail(email, firstName, otp);
+            // Step 5: Send OTP via Brevo — fail gracefully (user is created; flag for retry if email fails)
+            emailService.sendVerificationEmail(email, firstName, otp).catch((err) => {
+                console.error('⚠️ Verification email failed to send (user still created):', err.message);
+                // TODO: push to a retry queue (e.g. a pending_emails table) so the user can request resend
+            });
 
-            // Step 6: Audit log
-            await auditService.logEvent({
+            // Step 6: Audit log — non-critical, must not fail the registration response
+            auditService.logEvent({
                 userId: user.id,
                 action: 'USER_REGISTERED',
                 details: { email },
                 ip: req.ip,
                 userAgent: req.headers['user-agent'],
+            }).catch((err) => {
+                console.error('⚠️ Audit log failed for USER_REGISTERED:', err.message);
             });
 
             res.status(201).json(NEUTRAL_RESPONSE);
@@ -114,26 +117,46 @@ class AuthController {
         try {
             const user = await prisma.user.findUnique({ where: { email } });
             if (!user) {
-                res.status(404).json({ success: false, error: 'User not found' });
-                return;
-            }
-
-            const emailToken = await prisma.emailToken.findFirst({
-                where: {
-                    user_id: user.id,
-                    token: otp,
-                    type: 'EMAIL_VERIFY',
-                    used_at: null,
-                    expires_at: { gt: new Date() },
-                },
-            });
-
-            if (!emailToken) {
+                // Anti-enumeration: don't reveal whether the email exists
                 res.status(400).json({ success: false, error: 'Invalid or expired verification code' });
                 return;
             }
 
-            // Update user and token in transaction
+            // Find the token by user + type first (not by OTP value) to track attempts
+            const emailToken = await prisma.emailToken.findFirst({
+                where: {
+                    user_id: user.id,
+                    type: 'EMAIL_VERIFY',
+                    used_at: null,
+                    expires_at: { gt: new Date() },
+                },
+                orderBy: { created_at: 'desc' },
+            });
+
+            if (!emailToken) {
+                res.status(400).json({ success: false, error: 'No active verification code found. Please register again.' });
+                return;
+            }
+
+            // Check attempt limit (max 5 guesses per OTP)
+            const MAX_OTP_ATTEMPTS = SECURITY_CONFIG.MAX_OTP_ATTEMPTS;
+            if (emailToken.attempts >= MAX_OTP_ATTEMPTS) {
+                res.status(400).json({ success: false, error: 'Too many incorrect attempts. Please request a new verification code.' });
+                return;
+            }
+
+            // Wrong OTP — increment attempt counter
+            if (emailToken.token !== otp) {
+                await prisma.emailToken.update({
+                    where: { id: emailToken.id },
+                    data: { attempts: { increment: 1 } },
+                });
+                const remaining = MAX_OTP_ATTEMPTS - (emailToken.attempts + 1);
+                res.status(400).json({ success: false, error: `Invalid verification code. ${remaining} attempt${remaining === 1 ? '' : 's'} remaining.` });
+                return;
+            }
+
+            // Correct OTP — verify user and mark token as used
             await prisma.$transaction([
                 prisma.user.update({
                     where: { id: user.id },
@@ -170,10 +193,21 @@ class AuthController {
                 return;
             }
 
-            // Check account lock
-            if (user.is_locked && user.locked_until && user.locked_until > new Date()) {
-                res.status(403).json({ success: false, error: 'Account is temporarily locked. Try again later.' });
-                return;
+            // Check account lock — auto-reset if lockout period has expired
+            if (user.is_locked && user.locked_until) {
+                if (user.locked_until > new Date()) {
+                    // Still locked
+                    res.status(403).json({ success: false, error: 'Account is temporarily locked. Try again later.' });
+                    return;
+                }
+                // Lockout expired — reset in DB and sync local object to avoid stale reads downstream
+                await prisma.user.update({
+                    where: { id: user.id },
+                    data: { is_locked: false, login_attempts: 0, locked_until: null },
+                });
+                user.is_locked = false;
+                user.login_attempts = 0;
+                user.locked_until = null;
             }
 
             const isPasswordValid = await bcrypt.compare(password, user.password_hash);
@@ -295,7 +329,9 @@ class AuthController {
     // 5. Logout
     async logout(req: AuthRequest, res: Response): Promise<void> {
         try {
-            await supabase.auth.signOut();
+            // scope: 'local' = logs out this device only (clears the current session token)
+            // scope: 'global' = invalidates ALL sessions across all devices — use for security events like password change
+            await supabase.auth.signOut({ scope: 'local' });
             res.clearCookie('refreshToken', { path: '/api/auth/refresh' });
 
             if (req.user) {
@@ -341,6 +377,140 @@ class AuthController {
             res.status(200).json({ success: true, data: user });
         } catch (error) {
             res.status(500).json({ success: false, error: 'Failed to fetch profile' });
+        }
+    }
+
+    // 7. Forgot Password — request OTP
+    async forgotPassword(req: Request, res: Response): Promise<void> {
+        const { email } = req.body;
+
+        // Always return the same message — prevents email enumeration
+        const GENERIC = 'If an account exists for this email, a reset code has been sent.';
+
+        try {
+            const user = await prisma.user.findUnique({ where: { email } });
+            if (!user) {
+                res.status(200).json({ success: true, message: GENERIC });
+                return;
+            }
+
+            // Invalidate any previous unused PASSWORD_RESET tokens for this user
+            await prisma.emailToken.updateMany({
+                where: { user_id: user.id, type: 'PASSWORD_RESET', used_at: null },
+                data: { used_at: new Date() },
+            });
+
+            // Generate cryptographically secure 6-digit OTP
+            const otp = crypto.randomInt(100000, 999999).toString();
+            const expiresAt = new Date(Date.now() + SECURITY_CONFIG.OTP_RESET_EXPIRY_MINUTES * 60 * 1000);
+
+            await prisma.emailToken.create({
+                data: {
+                    user_id: user.id,
+                    token: otp,
+                    type: 'PASSWORD_RESET',
+                    expires_at: expiresAt,
+                },
+            });
+
+            await emailService.sendPasswordResetOtp(email, user.firstName, otp);
+
+            await auditService.logEvent({
+                userId: user.id,
+                action: 'PASSWORD_RESET_REQUESTED',
+                ip: req.ip,
+                userAgent: req.headers['user-agent'],
+            });
+
+            res.status(200).json({ success: true, message: GENERIC });
+        } catch (error: any) {
+            console.error('Forgot Password Error:', error.message);
+            res.status(500).json({ success: false, error: 'Failed to process request. Please try again.' });
+        }
+    }
+
+    // 8. Reset Password — verify OTP + set new password
+    async resetPassword(req: Request, res: Response): Promise<void> {
+        const { email, otp, newPassword } = req.body;
+
+        try {
+            const user = await prisma.user.findUnique({ where: { email } });
+            if (!user) {
+                res.status(400).json({ success: false, error: 'Invalid request' });
+                return;
+            }
+
+
+            // Find the latest valid, unused PASSWORD_RESET OTP
+            const record = await prisma.emailToken.findFirst({
+                where: {
+                    user_id: user.id,
+                    type: 'PASSWORD_RESET',
+                    used_at: null,
+                    expires_at: { gt: new Date() },
+                },
+                orderBy: { created_at: 'desc' },
+            });
+
+            if (!record) {
+                res.status(400).json({ success: false, error: 'Invalid or expired reset code' });
+                return;
+            }
+
+            // Check attempt limit (max 5 guesses per OTP)
+            const MAX_OTP_ATTEMPTS = 5;
+            if (record.attempts >= MAX_OTP_ATTEMPTS) {
+                res.status(400).json({ success: false, error: 'Too many incorrect attempts. Please request a new reset code.' });
+                return;
+            }
+
+            // Wrong OTP — increment attempt counter
+            if (record.token !== otp) {
+                await prisma.emailToken.update({
+                    where: { id: record.id },
+                    data: { attempts: { increment: 1 } },
+                });
+                const remaining = MAX_OTP_ATTEMPTS - (record.attempts + 1);
+                res.status(400).json({ success: false, error: `Invalid reset code. ${remaining} attempt${remaining === 1 ? '' : 's'} remaining.` });
+                return;
+            }
+
+            // Hash new password and update in Prisma + Supabase
+            const password_hash = await bcrypt.hash(newPassword, SECURITY_CONFIG.BCRYPT_ROUNDS);
+
+            await prisma.$transaction([
+                prisma.user.update({
+                    where: { id: user.id },
+                    data: { password_hash, password_changed_at: new Date() },
+                }),
+                prisma.emailToken.update({
+                    where: { id: record.id },
+                    data: { used_at: new Date() },
+                }),
+            ]);
+
+            // SECURITY NOTE: Supabase Admin API requires plaintext password — this is a
+            // server-to-server HTTPS call only (never exposed to client). It is required
+            // because our login() uses supabase.auth.signInWithPassword(), which validates
+            // the password on Supabase's side to issue a session token.
+            // Future refactor: move to pure bcrypt+JWT login to remove this dependency.
+            if (user.supabase_uid) {
+                await supabaseAdmin.auth.admin.updateUserById(user.supabase_uid, {
+                    password: newPassword,
+                });
+            }
+
+            await auditService.logEvent({
+                userId: user.id,
+                action: 'PASSWORD_RESET_COMPLETED',
+                ip: req.ip,
+                userAgent: req.headers['user-agent'],
+            });
+
+            res.status(200).json({ success: true, message: 'Password updated. You can now log in.' });
+        } catch (error: any) {
+            console.error('Reset Password Error:', error.message);
+            res.status(500).json({ success: false, error: 'Failed to reset password. Please try again.' });
         }
     }
 }

@@ -55,6 +55,7 @@ model EmailToken {
   type       TokenType
   expires_at DateTime  @map("expires_at")
   used_at    DateTime? @map("used_at")
+  attempts   Int       @default(0) @map("attempts") // incremented on each wrong guess
   created_at DateTime  @default(now()) @map("created_at")
 
   @@index([user_id])

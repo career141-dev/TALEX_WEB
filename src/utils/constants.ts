@@ -7,8 +7,10 @@ export const JWT_CONFIG = {
 export const SECURITY_CONFIG = {
   BCRYPT_ROUNDS: 12,
   MAX_LOGIN_ATTEMPTS: 5,
-  ACCOUNT_LOCK_DURATION: 15 * 60 * 1000, // 15 minutes
-  OTP_EXPIRY_HOURS: 24,
+  MAX_OTP_ATTEMPTS: 5,                     // Max wrong guesses before OTP is locked
+  ACCOUNT_LOCK_DURATION: 15 * 60 * 1000,  // 15 minutes in ms
+  OTP_EXPIRY_HOURS: 24,                    // Email verification OTP: 24 hours
+  OTP_RESET_EXPIRY_MINUTES: 15,            // Password reset OTP: 15 minutes (tighter window)
   PASSWORD_RESET_TOKEN_EXPIRY_HOURS: 1,
 };
 

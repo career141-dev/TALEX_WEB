@@ -23,6 +23,13 @@ const passwordResetLimiter = new Ratelimit({
     prefix: 'rl:reset',
 });
 
+// OTP verify: 10 attempts per hour per IP (brute-force protection)
+const otpVerifyLimiter = new Ratelimit({
+    redis,
+    limiter: Ratelimit.slidingWindow(10, '1 h'),
+    prefix: 'rl:otp',
+});
+
 function createMiddleware(limiter: Ratelimit, errorMessage: string) {
     return async (req: Request, res: Response, next: NextFunction): Promise<void> => {
         const ip = req.ip || req.headers['x-forwarded-for']?.toString() || 'unknown';
@@ -48,4 +55,9 @@ export const authRateLimiter = createMiddleware(
 export const passwordResetRateLimiter = createMiddleware(
     passwordResetLimiter,
     'Too many password reset requests. Please try again after an hour.'
+);
+
+export const otpRateLimiter = createMiddleware(
+    otpVerifyLimiter,
+    'Too many OTP attempts. Please try again after an hour.'
 );
