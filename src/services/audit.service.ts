@@ -1,8 +1,11 @@
-import { PrismaClient } from '@prisma/client';
-
-const prisma = new PrismaClient();
+import prisma from '../lib/prisma';
+import { AuditAction } from '../utils/constants';
 
 class AuditService {
+    /**
+     * Log a security event to the audit_logs table.
+     * Fails open (logs error to console) to prevent blocking main flows.
+     */
     async logEvent({
         userId,
         action,
@@ -11,24 +14,27 @@ class AuditService {
         userAgent,
     }: {
         userId: string;
-        action: string;
-        details?: any;
+        action: AuditAction;
+        details?: Record<string, string | number | boolean | null>;
         ip?: string;
         userAgent?: string;
     }) {
         try {
+            // Normalise IP to remove IPv6 prefix if present
+            const normalizedIp = ip?.startsWith('::ffff:') ? ip.slice(7) : ip;
+
             await prisma.auditLog.create({
                 data: {
                     user_id: userId,
                     action,
                     metadata: details || null,
-                    ip_address: ip,
+                    ip_address: normalizedIp,
                     user_agent: userAgent,
                 },
             });
         } catch (error) {
             console.error('❌ Failed to create audit log:', error);
-            // We don't throw here to prevent blocking main flows if logging fails
+            // Non-critical failure: we don't throw to avoid crashing the request
         }
     }
 }
