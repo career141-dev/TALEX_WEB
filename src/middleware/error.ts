@@ -15,16 +15,23 @@ export const errorHandler = (
     next: NextFunction
 ) => {
     const statusCode = err.statusCode || 500;
-    const message = err.message || 'Internal Server Error';
 
-    console.error(`[ERROR] ${statusCode} - ${message}`);
-    if (config.NODE_ENV === 'development') {
+    // Sanitize in production: mask 500 messages, allow 4xx messages
+    const message = config.NODE_ENV === 'production'
+        ? (statusCode < 500 ? err.message : 'Internal Server Error')
+        : err.message || 'Internal Server Error';
+
+    // Log the request context for easier debugging
+    console.error(`[ERROR] ${statusCode} - ${req.method} ${req.path} - ${message}`);
+
+    if (config.NODE_ENV === 'development' && err.stack) {
         console.error(err.stack);
     }
 
+    // Response shape matches the rest of the API
     res.status(statusCode).json({
-        status: 'error',
-        message,
+        success: false,
+        error: message,
         ...(config.NODE_ENV === 'development' && { stack: err.stack }),
     });
 };

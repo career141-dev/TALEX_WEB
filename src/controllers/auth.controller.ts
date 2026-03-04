@@ -34,7 +34,10 @@ class AuthController {
                 email,
                 password,
                 email_confirm: true, // We handle verification ourselves via OTP
-                user_metadata: { first_name: firstName, last_name: lastName, role: ROLES.CANDIDATE },
+                // user_metadata is user-editable — keep display fields here only
+                user_metadata: { first_name: firstName, last_name: lastName },
+                // app_metadata is service-role-only — role MUST go here, never user_metadata
+                app_metadata: { role: ROLES.CANDIDATE },
             });
 
             if (sbError) {
@@ -107,6 +110,69 @@ class AuthController {
             }
             console.error('Registration Error:', error.message);
             res.status(500).json({ success: false, error: 'Registration failed. Please try again.' });
+        }
+    }
+
+    // 1.1 Resend Verification OTP
+    async resendOtp(req: Request, res: Response): Promise<void> {
+        const { email } = req.body;
+
+        // Anti-enumeration: same response whether user exists/needs verification or not
+        const SUCCESS_RESPONSE = {
+            success: true,
+            message: 'If this email requires verification, a new code has been sent.',
+        };
+
+        try {
+            const user = await prisma.user.findUnique({
+                where: { email },
+                select: { id: true, firstName: true, is_verified: true, supabase_uid: true },
+            });
+
+            // If user doesn't exist or is already verified, return success silently
+            if (!user || user.is_verified) {
+                res.status(200).json(SUCCESS_RESPONSE);
+                return;
+            }
+
+            // Invalidate any previous unused verification tokens
+            await prisma.emailToken.updateMany({
+                where: { user_id: user.id, type: 'EMAIL_VERIFY', used_at: null },
+                data: { used_at: new Date() },
+            });
+
+            // Generate new 6-digit OTP
+            const otp = crypto.randomInt(100000, 999999).toString();
+            const expiresAt = new Date(Date.now() + SECURITY_CONFIG.OTP_EXPIRY_HOURS * 60 * 60 * 1000);
+
+            await prisma.emailToken.create({
+                data: {
+                    user_id: user.id,
+                    type: 'EMAIL_VERIFY',
+                    token: otp,
+                    expires_at: expiresAt,
+                },
+            });
+
+            // Send email (fire-and-forget)
+            emailService.sendVerificationEmail(email, user.firstName, otp).catch((err) => {
+                console.error('⚠️ Resend verification email failed:', err.message);
+            });
+
+            auditService.logEvent({
+                userId: user.id,
+                action: 'OTP_RESENT',
+                ip: req.ip,
+                userAgent: req.headers['user-agent'],
+            }).catch((err) => {
+                console.error('⚠️ Audit log failed for OTP_RESENT:', err.message);
+            });
+
+            res.status(200).json(SUCCESS_RESPONSE);
+
+        } catch (error: any) {
+            console.error('Resend OTP Error:', error.message);
+            res.status(500).json({ success: false, error: 'Failed to resend verification code' });
         }
     }
 
@@ -336,7 +402,7 @@ class AuthController {
 
             if (req.user) {
                 await auditService.logEvent({
-                    userId: (req.user as any).id,
+                    userId: req.user.dbId,
                     action: 'USER_LOGOUT',
                     ip: req.ip,
                     userAgent: req.headers['user-agent'],
@@ -351,6 +417,11 @@ class AuthController {
 
     // 6. Get Profile
     async me(req: AuthRequest, res: Response): Promise<void> {
+        if (!req.user) {
+            res.status(401).json({ success: false, error: 'Unauthorized' });
+            return;
+        }
+
         try {
             const user = await prisma.user.findUnique({
                 where: { supabase_uid: req.user.id },

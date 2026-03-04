@@ -9,7 +9,7 @@ const globalLimiter = new Ratelimit({
     prefix: 'rl:global',
 });
 
-// Auth: 5 attempts per 15 minutes per IP (only failed requests matter)
+// Auth: 5 attempts per 15 minutes per IP
 const authLimiter = new Ratelimit({
     redis,
     limiter: Ratelimit.slidingWindow(5, '15 m'),
@@ -32,13 +32,28 @@ const otpVerifyLimiter = new Ratelimit({
 
 function createMiddleware(limiter: Ratelimit, errorMessage: string) {
     return async (req: Request, res: Response, next: NextFunction): Promise<void> => {
-        const ip = req.ip || req.headers['x-forwarded-for']?.toString() || 'unknown';
-        const { success } = await limiter.limit(ip);
-        if (!success) {
-            res.status(429).json({ success: false, error: errorMessage });
-            return;
+        try {
+            // SECURITY: rely on req.ip (configured with 'trust proxy' in app.ts)
+            // DO NOT fallback to manual x-forwarded-for headers as they are easily spoofed.
+            const ip = req.ip || 'unknown';
+
+            const { success, reset } = await limiter.limit(ip);
+
+            if (!success) {
+                // Rate limited: provide Retry-After header for clients (seconds until reset)
+                const retryAfter = Math.ceil((reset - Date.now()) / 1000);
+                res.set('Retry-After', retryAfter.toString());
+
+                res.status(429).json({ success: false, error: errorMessage });
+                return;
+            }
+            next();
+        } catch (error) {
+            // REDIS FAILURE: fail open to avoid taking down the app if Upstash is unreachable.
+            // This prioritizes availability over strict rate limiting.
+            console.error('⚠️ Rate limiter error - failing open:', error);
+            next();
         }
-        next();
     };
 }
 

@@ -1,20 +1,24 @@
 import { Request, Response, NextFunction } from 'express';
-import { z, ZodObject, ZodError } from 'zod';
+import { z, ZodError } from 'zod';
 
-export const validate = (schema: ZodObject<any, any>) => {
+export const validate = (schema: z.ZodTypeAny) => {
     return async (req: Request, res: Response, next: NextFunction) => {
         try {
-            await schema.parseAsync(req.body);
+            // parseAsync handles async Zod refinements; also strips unknown fields via Zod's default behaviour
+            req.body = await schema.parseAsync(req.body);
             next();
         } catch (error) {
             if (error instanceof ZodError) {
                 res.status(400).json({
                     success: false,
                     error: 'Validation failed',
-                    details: error.issues.map((i) => ({
-                        path: i.path.join('.'),
-                        message: i.message,
-                    })),
+                    // Strip field-level details in production — prevents schema enumeration by attackers
+                    ...(process.env.NODE_ENV !== 'production' && {
+                        details: error.issues.map((i) => ({
+                            path: i.path.join('.'),
+                            message: i.message,
+                        })),
+                    }),
                 });
                 return;
             }
