@@ -207,6 +207,13 @@ class AuthController {
             // Check attempt limit (max 5 guesses per OTP)
             const MAX_OTP_ATTEMPTS = SECURITY_CONFIG.MAX_OTP_ATTEMPTS;
             if (emailToken.attempts >= MAX_OTP_ATTEMPTS) {
+                await auditService.logEvent({
+                    userId: user.id,
+                    action: 'SUSPICIOUS_OTP_EXHAUSTED',
+                    ip: req.ip,
+                    userAgent: req.headers['user-agent'],
+                    details: { type: 'EMAIL_VERIFY', attempts: emailToken.attempts }
+                });
                 res.status(400).json({ success: false, error: 'Too many incorrect attempts. Please request a new verification code.' });
                 return;
             }
@@ -217,6 +224,15 @@ class AuthController {
                     where: { id: emailToken.id },
                     data: { attempts: { increment: 1 } },
                 });
+
+                await auditService.logEvent({
+                    userId: user.id,
+                    action: 'AUTH_VERIFICATION_FAILED',
+                    ip: req.ip,
+                    userAgent: req.headers['user-agent'],
+                    details: { currentAttempts: emailToken.attempts + 1 }
+                });
+
                 const remaining = MAX_OTP_ATTEMPTS - (emailToken.attempts + 1);
                 res.status(400).json({ success: false, error: `Invalid verification code. ${remaining} attempt${remaining === 1 ? '' : 's'} remaining.` });
                 return;
@@ -271,6 +287,14 @@ class AuthController {
                     where: { id: user.id },
                     data: { is_locked: false, login_attempts: 0, locked_until: null },
                 });
+
+                await auditService.logEvent({
+                    userId: user.id,
+                    action: 'ACCOUNT_AUTO_UNLOCKED',
+                    ip: req.ip,
+                    userAgent: req.headers['user-agent'],
+                });
+
                 user.is_locked = false;
                 user.login_attempts = 0;
                 user.locked_until = null;
@@ -290,6 +314,16 @@ class AuthController {
                         locked_until: isLockingNow ? new Date(Date.now() + SECURITY_CONFIG.ACCOUNT_LOCK_DURATION) : null,
                     }
                 });
+
+                if (isLockingNow) {
+                    await auditService.logEvent({
+                        userId: user.id,
+                        action: 'ACCOUNT_LOCKED',
+                        ip: req.ip,
+                        userAgent: req.headers['user-agent'],
+                        details: { attempts }
+                    });
+                }
 
                 res.status(401).json({ success: false, error: 'Invalid email or password' });
                 return;
@@ -382,6 +416,23 @@ class AuthController {
                 maxAge: 7 * 24 * 60 * 60 * 1000,
                 path: '/api/auth/refresh',
             });
+
+            // Log session refresh
+            if (data.session.user.id) {
+                const dbUser = await prisma.user.findUnique({
+                    where: { supabase_uid: data.session.user.id },
+                    select: { id: true }
+                });
+
+                if (dbUser) {
+                    await auditService.logEvent({
+                        userId: dbUser.id,
+                        action: 'SESSION_REFRESHED',
+                        ip: req.ip,
+                        userAgent: req.headers['user-agent'],
+                    });
+                }
+            }
 
             res.status(200).json({
                 success: true,
@@ -531,6 +582,13 @@ class AuthController {
             // Check attempt limit (max 5 guesses per OTP)
             const MAX_OTP_ATTEMPTS = 5;
             if (record.attempts >= MAX_OTP_ATTEMPTS) {
+                await auditService.logEvent({
+                    userId: user.id,
+                    action: 'SUSPICIOUS_OTP_EXHAUSTED',
+                    ip: req.ip,
+                    userAgent: req.headers['user-agent'],
+                    details: { type: 'PASSWORD_RESET', attempts: record.attempts }
+                });
                 res.status(400).json({ success: false, error: 'Too many incorrect attempts. Please request a new reset code.' });
                 return;
             }
@@ -541,6 +599,15 @@ class AuthController {
                     where: { id: record.id },
                     data: { attempts: { increment: 1 } },
                 });
+
+                await auditService.logEvent({
+                    userId: user.id,
+                    action: 'PASSWORD_RESET_FAILED',
+                    ip: req.ip,
+                    userAgent: req.headers['user-agent'],
+                    details: { currentAttempts: record.attempts + 1 }
+                });
+
                 const remaining = MAX_OTP_ATTEMPTS - (record.attempts + 1);
                 res.status(400).json({ success: false, error: `Invalid reset code. ${remaining} attempt${remaining === 1 ? '' : 's'} remaining.` });
                 return;
@@ -566,9 +633,15 @@ class AuthController {
             // the password on Supabase's side to issue a session token.
             // Future refactor: move to pure bcrypt+JWT login to remove this dependency.
             if (user.supabase_uid) {
+                // Update password in Supabase
                 await supabaseAdmin.auth.admin.updateUserById(user.supabase_uid, {
                     password: newPassword,
                 });
+
+                // SECURITY BOOST: After password reset, invalidate ALL active sessions 
+                // on all devices. This forces the user (and any potential attacker) 
+                // to log in again with the new credentials.
+                await supabaseAdmin.auth.admin.signOut(user.supabase_uid, 'global');
             }
 
             await auditService.logEvent({
