@@ -172,7 +172,8 @@ class EmailService {
         ...(textContent && { textContent }),
         ...(attachment && { attachment }),
       });
-      console.log(`✅ Email sent: "${subject}" → ${to}`);
+      // No console.log here to prevent leaking sensitive OTPs in server logs.
+      // Success is handled silently; errors are logged below.
     } catch (error) {
       console.error('❌ Brevo Email Error:', error);
       throw new Error('Failed to send email');
