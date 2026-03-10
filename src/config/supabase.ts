@@ -1,12 +1,40 @@
 import { createClient } from "@supabase/supabase-js";
 import { config } from "./env";
 
-// Shared server-side options to disable session persistence and auto-refresh.
-// This prevents memory leaks and console warnings in a backend environment.
+import fs from 'fs';
+import path from 'path';
+
+// File-based storage shim for server-side PKCE (survives ts-node-dev restarts)
+const STORAGE_FILE = path.resolve(process.cwd(), 'temp-auth-storage.json');
+
+export const getStorage = () => {
+    try {
+        if (!fs.existsSync(STORAGE_FILE)) return {};
+        return JSON.parse(fs.readFileSync(STORAGE_FILE, 'utf-8'));
+    } catch { return {}; }
+};
+
+export const saveStorage = (data: any) => {
+    fs.writeFileSync(STORAGE_FILE, JSON.stringify(data, null, 2));
+};
+
 const serverOptions = {
     auth: {
+        storage: {
+            getItem: (key: string) => getStorage()[key] || null,
+            setItem: (key: string, value: string) => {
+                const data = getStorage();
+                data[key] = value;
+                saveStorage(data);
+            },
+            removeItem: (key: string) => {
+                const data = getStorage();
+                delete data[key];
+                saveStorage(data);
+            },
+        },
         autoRefreshToken: false,
-        persistSession: false,
+        persistSession: true,
         detectSessionInUrl: false,
     },
 };

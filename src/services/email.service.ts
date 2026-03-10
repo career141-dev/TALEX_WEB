@@ -181,10 +181,10 @@ class EmailService {
   }
 
   // ── 1. Email Verification OTP ─────────────────────────────────────────────
-  async sendVerificationEmail(email: string, firstName: string, otp: string) {
+  async sendVerificationEmail(email: string, name: string, otp: string) {
     const body = `
       <h2 style="margin:0 0 8px;color:#1E3A5F;font-size:22px;">
-        Welcome, ${firstName}!
+        Welcome, ${name}!
       </h2>
       <p style="color:#64748B;margin:0 0 20px;font-size:15px;line-height:1.6;">
         Thank you for registering for <strong>Talex Awards</strong>.
@@ -204,7 +204,7 @@ class EmailService {
 
     await this.send({
       to: email,
-      toName: firstName,
+      toName: name,
       subject: `${otp} is your Talex Awards verification code`,
       htmlContent: baseTemplate(
         `Your verification code is ${otp} — enter it to activate your account`,
@@ -215,13 +215,13 @@ class EmailService {
   }
 
   // ── 2. Password Reset OTP ─────────────────────────────────────────────────
-  async sendPasswordResetOtp(email: string, firstName: string, otp: string) {
+  async sendPasswordResetOtp(email: string, name: string, otp: string) {
     const body = `
       <h2 style="margin:0 0 8px;color:#1E3A5F;font-size:22px;">
         Password Reset Request
       </h2>
       <p style="color:#64748B;margin:0 0 20px;font-size:15px;line-height:1.6;">
-        Hi <strong>${firstName}</strong>, we received a request to reset your
+        Hi <strong>${name}</strong>, we received a request to reset your
         Talex Awards password. Use the code below — it expires in
         <strong>15 minutes</strong>.
       </p>
@@ -240,7 +240,7 @@ class EmailService {
 
     await this.send({
       to: email,
-      toName: firstName,
+      toName: name,
       subject: `${otp} is your Talex Awards password reset code`,
       htmlContent: baseTemplate(
         `Your password reset code is ${otp} — expires in 15 minutes`,
@@ -253,7 +253,7 @@ class EmailService {
   // ── 3. Payment Receipt ────────────────────────────────────────────────────
   async sendReceiptEmail(
     email: string,
-    firstName: string,
+    name: string,
     orderId: string,
     amount: string
   ) {
@@ -262,7 +262,7 @@ class EmailService {
         ✓ Payment Confirmed
       </h2>
       <p style="color:#64748B;margin:0 0 20px;font-size:15px;line-height:1.6;">
-        Hi <strong>${firstName}</strong>, your application fee has been
+        Hi <strong>${name}</strong>, your application fee has been
         received. You can now access and complete your application.
       </p>
 
@@ -280,7 +280,7 @@ class EmailService {
 
     await this.send({
       to: email,
-      toName: firstName,
+      toName: name,
       subject: 'Payment Confirmed — Talex Awards Application Fee',
       htmlContent: baseTemplate(
         `Payment of LKR ${amount} confirmed. You can now complete your application.`,
@@ -293,7 +293,7 @@ class EmailService {
   // ── 4. Application Submission Confirmation (with PDF attachment) ──────────
   async sendConfirmationEmail(
     email: string,
-    firstName: string,
+    name: string,
     applicationId: string,
     category: string,
     pdfBuffer: Buffer
@@ -303,7 +303,7 @@ class EmailService {
         Application Submitted Successfully
       </h2>
       <p style="color:#64748B;margin:0 0 20px;font-size:15px;line-height:1.6;">
-        Hi <strong>${firstName}</strong>, your Talex Awards application has been
+        Hi <strong>${name}</strong>, your Talex Awards application has been
         received and is now under review by our team.
       </p>
 
@@ -331,7 +331,7 @@ class EmailService {
 
     await this.send({
       to: email,
-      toName: firstName,
+      toName: name,
       subject: 'Application Submitted — Talex Awards',
       htmlContent: baseTemplate(
         `Your Talex Awards application has been received and is under review.`,
@@ -342,6 +342,56 @@ class EmailService {
         content: pdfBuffer.toString('base64'),
         name: 'Talex_Awards_Application_Summary.pdf',
       }],
+    });
+  }
+
+  // ── 5. Admin/Judge Invitation ─────────────────────────────────────────────
+  async sendInviteEmail({
+    to,
+    name,
+    role,
+    inviteLink,
+    expiresIn = '48 hours',
+  }: {
+    to: string;
+    name: string;
+    role: string;
+    inviteLink: string;
+    expiresIn?: string;
+  }) {
+    const body = `
+      <h2 style="margin:0 0 8px;color:#1E3A5F;font-size:22px;">
+        You have been invited to Talex Awards
+      </h2>
+      <p style="color:#64748B;margin:0 0 20px;font-size:15px;line-height:1.6;">
+        Hi <strong>${name}</strong>, you have been invited to join the 
+        Talex Awards platform as a <strong>${role}</strong>.
+      </p>
+
+      <div style="background:#F0F9FF;border-left:4px solid #0EA5E9;
+                  padding:14px 16px;border-radius:0 8px 8px 0;margin:20px 0;">
+        <p style="margin:0;font-size:13px;color:#0369A1;line-height:1.6;">
+          Click the button below to set your password and activate your account.
+          This invitation link expires in <strong>${expiresIn}</strong>.
+        </p>
+      </div>
+
+      ${primaryButton(inviteLink, 'Activate My Account')}
+
+      <p style="color:#94A3B8;font-size:12px;margin-top:24px;">
+        If you did not expect this invitation, you can safely ignore this email.
+      </p>
+    `;
+
+    await this.send({
+      to,
+      toName: name,
+      subject: 'You have been invited to Talex Awards — Set your password',
+      htmlContent: baseTemplate(
+        `Join Talex Awards as a ${role} — invitation expires in ${expiresIn}`,
+        body
+      ),
+      textContent: `You have been invited to Talex Awards as a ${role}.\n\nSet your password at: ${inviteLink}\n\nThis link expires in ${expiresIn}.`,
     });
   }
 }

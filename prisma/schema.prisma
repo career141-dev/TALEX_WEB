@@ -30,6 +30,8 @@ model User {
   login_attempts      Int           @default(0) @map("login_attempts")
   last_failed_login   DateTime?     @map("last_failed_login")
   password_changed_at DateTime?     @map("password_changed_at")
+  invited_by          String?       @map("invited_by")
+  invited_at          DateTime?     @map("invited_at")
   created_at          DateTime      @default(now()) @map("created_at")
   updated_at          DateTime      @updatedAt @map("updated_at")
   applications        Application[]
@@ -67,6 +69,7 @@ model EmailToken {
 enum TokenType {
   EMAIL_VERIFY
   PASSWORD_RESET
+  INVITE
 }
 
 // AUDIT LOG MODEL

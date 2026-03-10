@@ -9,6 +9,7 @@ const envSchema = z.object({
     PORT: z.coerce.number().default(5000),
     NODE_ENV: z.enum(['development', 'production', 'test']).default('development'),
     FRONTEND_URL: z.string().url(),
+    BACKEND_URL: z.string().url(),
     DATABASE_URL: z.string().url(),
     UPSTASH_REDIS_REST_URL: z.string().url(),
     UPSTASH_REDIS_REST_TOKEN: z.string(),

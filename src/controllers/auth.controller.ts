@@ -5,8 +5,9 @@ import prisma from '../lib/prisma';
 import { supabase, supabaseAdmin } from '../config/supabase';
 import { emailService } from '../services/email.service';
 import { auditService } from '../services/audit.service';
-import { SECURITY_CONFIG, ROLES } from '../utils/constants';
+import { SECURITY_CONFIG, ROLES, AUDIT_ACTIONS } from '../utils/constants';
 import { AuthRequest } from '../middleware/auth.middleware';
+import { acceptInviteSchema } from '../utils/validation';
 
 class AuthController {
     // 1. Register — Ghost-Account-Safe with Anti-Enumeration
@@ -82,7 +83,7 @@ class AuthController {
             });
 
             // Step 5: Send OTP via Brevo — fail gracefully (user is created; flag for retry if email fails)
-            emailService.sendVerificationEmail(email, firstName, otp).catch((err) => {
+            emailService.sendVerificationEmail(email, `${firstName} ${lastName}`, otp).catch((err) => {
                 console.error('⚠️ Verification email failed to send (user still created):', err.message);
                 // TODO: push to a retry queue (e.g. a pending_emails table) so the user can request resend
             });
@@ -97,6 +98,8 @@ class AuthController {
             }).catch((err) => {
                 console.error('⚠️ Audit log failed for USER_REGISTERED:', err.message);
             });
+
+            
 
             res.status(201).json(NEUTRAL_RESPONSE);
 
@@ -126,7 +129,7 @@ class AuthController {
         try {
             const user = await prisma.user.findUnique({
                 where: { email },
-                select: { id: true, firstName: true, is_verified: true, supabase_uid: true },
+                select: { id: true, firstName: true, lastName: true, is_verified: true, supabase_uid: true },
             });
 
             // If user doesn't exist or is already verified, return success silently
@@ -155,7 +158,7 @@ class AuthController {
             });
 
             // Send email (fire-and-forget)
-            emailService.sendVerificationEmail(email, user.firstName, otp).catch((err) => {
+            emailService.sendVerificationEmail(email, `${user.firstName} ${user.lastName}`, otp).catch((err) => {
                 console.error('⚠️ Resend verification email failed:', err.message);
             });
 
@@ -535,7 +538,7 @@ class AuthController {
                 },
             });
 
-            await emailService.sendPasswordResetOtp(email, user.firstName, otp);
+            await emailService.sendPasswordResetOtp(email, `${user.firstName} ${user.lastName}`, otp);
 
             await auditService.logEvent({
                 userId: user.id,
@@ -655,6 +658,107 @@ class AuthController {
         } catch (error: any) {
             console.error('Reset Password Error:', error.message);
             res.status(500).json({ success: false, error: 'Failed to reset password. Please try again.' });
+        }
+    }
+
+    // ── 7. Accept Invite — Account Activation ──────────────────────────────
+    async acceptInvite(req: Request, res: Response): Promise<void> {
+        // 1. Validate request body
+        const validated = acceptInviteSchema.safeParse(req.body);
+        if (!validated.success) {
+            res.status(400).json({
+                success: false,
+                message: 'Validation failed',
+                errors: validated.error.flatten().fieldErrors,
+            });
+            return;
+        }
+
+        const { token, password } = validated.data;
+
+        // 2. Find and validate the INVITE token
+        const tokenRecord = await prisma.emailToken.findFirst({
+            where: { token, type: 'INVITE' },
+            include: { user: true },
+        });
+
+        if (!tokenRecord) {
+            res.status(404).json({ success: false, message: 'Invalid invitation link.' });
+            return;
+        }
+
+        // 3. Expiry and Usage Checks
+        if (new Date() > tokenRecord.expires_at) {
+            res.status(410).json({
+                success: false,
+                message: 'This invitation link has expired. Please ask your administrator to resend it.',
+            });
+            return;
+        }
+
+        if (tokenRecord.used_at) {
+            res.status(409).json({
+                success: false,
+                message: 'This invitation link has already been used. Please log in.',
+            });
+            return;
+        }
+
+        const user = tokenRecord.user;
+
+        try {
+            // 4. Hash the new password
+            const password_hash = await bcrypt.hash(password, SECURITY_CONFIG.BCRYPT_ROUNDS);
+
+            // 5. Atomic Update: User activation + Token usage
+            await prisma.$transaction([
+                // Update User
+                prisma.user.update({
+                    where: { id: user.id },
+                    data: {
+                        password_hash,
+                        is_verified: true,
+                        password_changed_at: new Date(),
+                    },
+                }),
+                // Mark Token as used
+                prisma.emailToken.update({
+                    where: { id: tokenRecord.id },
+                    data: { used_at: new Date() },
+                }),
+            ]);
+
+            // 6. Synchronize with Supabase Auth
+            if (user.supabase_uid) {
+                await supabaseAdmin.auth.admin.updateUserById(
+                    user.supabase_uid,
+                    { password },
+                );
+
+                // Security Boost: Wipe any partial sessions
+                await supabaseAdmin.auth.admin.signOut(user.supabase_uid, 'global');
+            }
+
+            // 7. Audit Log
+            await auditService.logEvent({
+                userId: user.id,
+                action: AUDIT_ACTIONS.STAFF_ACCOUNT_ACTIVATED,
+                details: { role: user.role },
+                ip: req.ip,
+                userAgent: req.headers['user-agent'],
+            });
+
+            res.status(200).json({
+                success: true,
+                message: 'Account activated successfully. You can now log in.',
+            });
+
+        } catch (error: any) {
+            console.error('[acceptInvite] Error:', error.message);
+            res.status(500).json({
+                success: false,
+                message: 'Account activation failed. Please try again.',
+            });
         }
     }
 }
