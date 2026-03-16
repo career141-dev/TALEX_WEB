@@ -17,7 +17,6 @@ model User {
   password_hash       String
   company             String
   designation         String
-  phone               String?
   profileImage        String?       @map("profile_image")
   bio                 String?
   role                Role          @default(CANDIDATE)
@@ -34,9 +33,17 @@ model User {
   invited_at          DateTime?     @map("invited_at")
   created_at          DateTime      @default(now()) @map("created_at")
   updated_at          DateTime      @updatedAt @map("updated_at")
+  
+  // Payment fields ★ v3.0
+  payment_status      PaymentStatus @default(UNPAID) @map("payment_status")
+  paid_at             DateTime?     @map("paid_at")
+  phone               String?       // Required for PayHere checkout
+  address             String?       // Required for PayHere checkout
+  
   applications        Application[]
   emailTokens         EmailToken[]
   auditLogs           AuditLog[]
+  payments            Payment[]
 
   @@index([email])
   @@map("users")
@@ -46,6 +53,91 @@ enum Role {
   CANDIDATE
   ADMIN
   JUDGE
+}
+
+enum PaymentStatus {
+  UNPAID    // User has not started payment yet (default)
+  PENDING   // Payment initiated — waiting for PayHere webhook
+  PAID      // Confirmed by PayHere — terminal state
+  FAILED    // PayHere returned -2 (card declined / error)
+  CANCELLED // User cancelled on PayHere page (status_code = -1)
+  EXPIRED   // No webhook received within 24 hours
+  REFUNDED  // Admin issued refund
+}
+
+// PAYMENT MODEL ★ v3.0
+model Payment {
+  id                    String        @id @default(uuid())
+  user_id               String        @map("user_id")
+  user                  User          @relation(fields: [user_id], references: [id])
+  
+  // PayHere tracking
+  order_id              String        @unique @map("order_id")
+  payhere_payment_id    String?       @unique @map("payhere_payment_id")
+  
+  // Payment details
+  amount                Decimal       @db.Decimal(10, 2)
+  currency              String        @default("LKR")
+  status                PaymentStatus @default(PENDING)
+  
+  // PayHere response
+  payhere_status_code   Int?          @map("payhere_status_code")
+  payhere_status_message String?      @map("payhere_status_message")
+  payhere_method        String?       @map("payhere_method")
+  payhere_hash          String?       @map("payhere_hash")
+  
+  // Idempotency
+  webhook_received_at   DateTime?     @map("webhook_received_at")
+  webhook_processed     Boolean       @default(false) @map("webhook_processed")
+  
+  // Retry tracking
+  retry_count           Int           @default(0) @map("retry_count")
+  max_retries           Int           @default(3) @map("max_retries")
+  parent_order_id       String?       @map("parent_order_id")
+  expired_at            DateTime?     @map("expired_at")
+  
+  // Security & Metadata
+  ip_address            String?       @map("ip_address")
+  created_at            DateTime      @default(now()) @map("created_at")
+  updated_at            DateTime      @updatedAt @map("updated_at")
+  paid_at               DateTime?     @map("paid_at")
+
+  // Relations
+  logs                  PaymentLog[]
+
+  @@index([user_id])
+  @@index([order_id])
+  @@index([status])
+  @@map("payments")
+}
+
+// PAYMENT LOG MODEL ★ v3.0
+model PaymentLog {
+  id              String   @id @default(uuid())
+  payment_id      String?  @map("payment_id")
+  payment         Payment? @relation(fields: [payment_id], references: [id])
+  order_id        String   @map("order_id")
+  
+  // Event
+  event_type      String   @map("event_type") // INITIATE, WEBHOOK_VERIFIED, WEBHOOK_REJECTED, etc.
+  
+  // Raw gateway data
+  
+  gateway_payload Json?    @map("gateway_payload")
+  gateway_status  String?  @map("gateway_status")
+  gateway_method  String?  @map("gateway_method")
+  gateway_amount  String?  @map("gateway_amount")
+  
+  // Context
+  ip_address      String?  @map("ip_address")
+  hash_valid      Boolean? @map("hash_valid")
+  processed       Boolean  @default(false) @map("processed")
+  notes           String?
+  created_at      DateTime @default(now()) @map("created_at")
+
+  @@index([order_id])
+  @@index([event_type])
+  @@map("payment_logs")
 }
 
 // EMAIL TOKEN MODEL

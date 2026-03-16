@@ -7,7 +7,11 @@ import { errorHandler } from './middleware/error';
 
 import authRoutes from './routes/auth.routes';
 import adminRoutes from './routes/admin.routes';
+import paymentRoutes from './routes/payment.routes';
 import { globalRateLimiter } from './middleware/rate-limiter';
+
+import cron from 'node-cron';
+import { expireStalePayments } from './jobs/expirePayments.job';
 
 const app = express();
 
@@ -35,6 +39,13 @@ app.use(cookieParser());
 // Routes
 app.use('/api/auth', authRoutes);
 app.use('/api/admin', adminRoutes);
+app.use('/api/payment', paymentRoutes);
+
+// Scheduled Jobs
+// Run payment expiry check every hour at the start of the hour
+cron.schedule('0 * * * *', async () => {
+    await expireStalePayments();
+});
 
 // Health Check
 app.get('/api/health', (req, res) => {

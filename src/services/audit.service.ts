@@ -13,9 +13,9 @@ class AuditService {
         ip,
         userAgent,
     }: {
-        userId: string;
+        userId?: string;
         action: AuditAction;
-        details?: Record<string, string | number | boolean | null>;
+        details?: any;
         ip?: string;
         userAgent?: string;
     }) {
@@ -25,7 +25,7 @@ class AuditService {
 
             await prisma.auditLog.create({
                 data: {
-                    user_id: userId,
+                    user_id: userId || null,
                     action,
                     metadata: details || null,
                     ip_address: normalizedIp,

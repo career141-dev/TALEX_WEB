@@ -25,6 +25,16 @@ const envSchema = z.object({
     // Auth Config: Supabase handles tokens currently, these are reserved for future custom JWT use
     JWT_SECRET: z.string().min(32).optional(),
     JWT_REFRESH_SECRET: z.string().optional(),
+
+    // PayHere Payment Gateway Config ★ v3.0
+    PAYHERE_MERCHANT_ID: z.string().min(1),
+    PAYHERE_MERCHANT_SECRET: z.string().min(1),
+    PAYHERE_SANDBOX: z.string().transform((v) => v === 'true'),
+    PAYHERE_NOTIFY_URL: z.string().url(),
+    PAYHERE_RETURN_URL: z.string().url(),
+    PAYHERE_CANCEL_URL: z.string().url(),
+    PAYMENT_AMOUNT: z.string().transform(Number),
+    PAYMENT_CURRENCY: z.string().default('LKR'),
 });
 
 const parsedEnv = envSchema.safeParse(process.env);

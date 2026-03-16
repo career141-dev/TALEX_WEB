@@ -30,6 +30,13 @@ const otpVerifyLimiter = new Ratelimit({
     prefix: 'rl:otp',
 });
 
+// Payment Retry: 3 attempts per hour per IP
+const paymentRetry = new Ratelimit({
+    redis,
+    limiter: Ratelimit.slidingWindow(3, '1 h'),
+    prefix: 'rl:payment-retry',
+});
+
 function createMiddleware(limiter: Ratelimit, errorMessage: string) {
     return async (req: Request, res: Response, next: NextFunction): Promise<void> => {
         try {
@@ -75,4 +82,9 @@ export const passwordResetRateLimiter = createMiddleware(
 export const otpRateLimiter = createMiddleware(
     otpVerifyLimiter,
     'Too many OTP attempts. Please try again after an hour.'
+);
+
+export const paymentRetryLimiter = createMiddleware(
+    paymentRetry,
+    'Too many retry attempts. Please try again after an hour.'
 );

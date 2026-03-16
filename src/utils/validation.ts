@@ -7,7 +7,8 @@ export const registerSchema = z.object({
   password: z.string().min(8, 'Password must be at least 8 characters'),
   company: z.string().min(2, 'Company name is required'),
   designation: z.string().min(2, 'Designation is required'),
-  phone: z.string().optional(),
+  phone: z.string().regex(/^07[0-9]{8}$/, 'Enter a valid Sri Lankan mobile number (e.g. 0771234567)'),
+  address: z.string().optional(),
 });
 
 export const loginSchema = z.object({

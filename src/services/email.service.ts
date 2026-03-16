@@ -160,8 +160,21 @@ class EmailService {
   }) {
     if (!config.BREVO_API_KEY) {
       console.warn('⚠️  BREVO_API_KEY not set. Email not sent:', { to, subject });
-      return;
     }
+
+    // ── DEV LOGGING ───────────────────────────────────────────────────────────
+    // If in development, print a clear box to terminal so user can see OTPs
+    if (config.NODE_ENV === 'development') {
+      console.log(' \n' +
+        '┌── 📧 [DEV EMAIL PREVIEW] ──────────────────────────────────────────\n' +
+        `│ To:      ${toName} <${to}>\n` +
+        `│ Subject: ${subject}\n` +
+        '│ ───────────────────────────────────────────────────────────────────\n' +
+        `│ Body:    ${textContent || 'Check HTML Content'}\n` +
+        '└────────────────────────────────────────────────────────────────────\n');
+    }
+
+    if (!config.BREVO_API_KEY) return;
 
     try {
       await this.client.transactionalEmails.sendTransacEmail({
@@ -251,42 +264,48 @@ class EmailService {
   }
 
   // ── 3. Payment Receipt ────────────────────────────────────────────────────
-  async sendReceiptEmail(
-    email: string,
-    name: string,
-    orderId: string,
-    amount: string
-  ) {
+  async sendPaymentReceiptEmail(data: {
+    to: string;
+    firstName: string;
+    orderId: string;
+    paymentId: string;
+    amount: string;
+    currency: string;
+    method: string;
+    paidAt: string;
+  }) {
+    const date = new Date(data.paidAt).toLocaleString('en-LK', {
+      timeZone: 'Asia/Colombo',
+      dateStyle: 'full',
+      timeStyle: 'short',
+    });
+
     const body = `
-      <h2 style="margin:0 0 8px;color:#16A34A;font-size:22px;">
-        ✓ Payment Confirmed
-      </h2>
-      <p style="color:#64748B;margin:0 0 20px;font-size:15px;line-height:1.6;">
-        Hi <strong>${name}</strong>, your application fee has been
-        received. You can now access and complete your application.
+      <div style="background:#F3F4F6;border-radius:12px;padding:24px;margin:24px 0;">
+        <h3 style="margin:0 0 16px;color:#1E3A5F;font-size:18px;">Payment Receipt</h3>
+        <table width="100%" cellpadding="0" cellspacing="0">
+          ${infoRow('Order ID', `<strong>${data.orderId}</strong>`)}
+          ${infoRow('Payment ID', `<strong>${data.paymentId}</strong>`)}
+          ${infoRow('Amount', `<strong style="color:#16A34A;">${data.currency} ${data.amount}</strong>`)}
+          ${infoRow('Method', `<strong>${data.method}</strong>`)}
+          ${infoRow('Date & Time', `<strong>${date}</strong>`)}
+        </table>
+      </div>
+      <p style="color:#64748B;font-size:14px;line-height:1.6;">
+        <strong>Next Step:</strong> Your application portal is now unlocked. Please log in to complete your award submission.
       </p>
-
-      ${infoTable(`
-        ${infoRow('Amount Paid', `<strong style="color:#16A34A;">LKR ${amount}</strong>`)}
-        ${infoRow('Reference', `<code style="background:#F1F5F9;padding:2px 6px;border-radius:4px;">${orderId}</code>`)}
-        ${infoRow('Date', new Date().toLocaleDateString('en-LK', {
-      year: 'numeric', month: 'long', day: 'numeric'
-    }))}
-        ${infoRow('Status', '<span style="color:#16A34A;font-weight:600;">Confirmed</span>')}
-      `)}
-
       ${primaryButton(`${config.FRONTEND_URL}/candidate/dashboard`, 'Go to My Application')}
     `;
 
     await this.send({
-      to: email,
-      toName: name,
-      subject: 'Payment Confirmed — Talex Awards Application Fee',
+      to: data.to,
+      toName: data.firstName,
+      subject: `Payment Confirmed — TALEX Awards [${data.orderId}]`,
       htmlContent: baseTemplate(
-        `Payment of LKR ${amount} confirmed. You can now complete your application.`,
+        `Payment of ${data.currency} ${data.amount} confirmed. Your application is unlocked.`,
         body
       ),
-      textContent: `Payment Confirmed\n\nAmount: LKR ${amount}\nReference: ${orderId}\n\nYou can now complete your application at ${config.FRONTEND_URL}`,
+      textContent: `Payment Confirmed\n\nAmount: ${data.currency} ${data.amount}\nReference: ${data.orderId}\nPayment ID: ${data.paymentId}\n\nYou can now complete your application at ${config.FRONTEND_URL}`,
     });
   }
 

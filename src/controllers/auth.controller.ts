@@ -12,7 +12,7 @@ import { acceptInviteSchema } from '../utils/validation';
 class AuthController {
     // 1. Register — Ghost-Account-Safe with Anti-Enumeration
     async register(req: Request, res: Response): Promise<void> {
-        const { email, password, firstName, lastName, company, designation, phone } = req.body;
+        const { email, password, firstName, lastName, company, designation, phone, address } = req.body;
 
         // Anti-enumeration: same response whether email exists or not
         const NEUTRAL_RESPONSE = {
@@ -61,6 +61,7 @@ class AuthController {
                     company,
                     designation,
                     phone,
+                    address,
                     supabase_uid: supabaseUserId,
                     role: 'CANDIDATE',
                     is_verified: false,
@@ -99,7 +100,7 @@ class AuthController {
                 console.error('⚠️ Audit log failed for USER_REGISTERED:', err.message);
             });
 
-            
+
 
             res.status(201).json(NEUTRAL_RESPONSE);
 

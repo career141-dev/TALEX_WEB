@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>TALEX Awards — PayHere Test v4</title>
+    <script type="text/javascript" src="https://www.payhere.lk/lib/payhere.js"></script>
+    <style>
+        body { font-family: sans-serif; background: #0f172a; color: white; display: flex; align-items: center; justify-content: center; min-height: 100vh; margin: 0; }
+        .card { background: #1e293b; padding: 2rem; border-radius: 12px; width: 500px; text-align: center; border: 1px solid #334155; }
+        textarea { width: 100%; height: 200px; background: #000; color: #0f0; padding: 10px; border-radius: 5px; margin-bottom: 20px; box-sizing: border-box; }
+        button { background: #38bdf8; color: #000; border: none; padding: 15px; border-radius: 5px; font-weight: bold; cursor: pointer; width: 100%; }
+    </style>
+</head>
+<body>
+<div class="card">
+    <h2>TALEX Test v4 (Unbreakable)</h2>
+    <p>Paste anything from Postman below:</p>
+    <textarea id="jsonInput"></textarea>
+    <button onclick="startPayment()">Launch Popup 💳</button>
+</div>
+
+<script>
+function startPayment() {
+    let raw = document.getElementById('jsonInput').value;
+    
+    // Attempt to find the FIRST '{' and LAST '}' to extract only the JSON
+    let first = raw.indexOf('{');
+    let last = raw.lastIndexOf('}');
+    
+    if (first === -1 || last === -1) {
+        return alert("Error: No JSON object found in your paste. Make sure you copy the { } brackets!");
+    }
+
+    let jsonStr = raw.substring(first, last + 1);
+
+    try {
+        let obj = JSON.parse(jsonStr);
+        // Handle nesting
+        let params = obj.checkoutParams ? obj.checkoutParams : obj;
+        
+        console.log("Extracted Params:", params);
+        payhere.startPayment(params);
+    } catch (e) {
+        alert("JSON Parse Error: " + e.message + "\n\nTry copying just the parts between { and }.");
+    }
+}
+payhere.onCompleted = (id) => alert("✅ SUCCESS! Order: " + id);
+payhere.onDismissed = () => console.log("Closed");
+payhere.onError = (err) => alert("❌ PayHere Error: " + err);
+</script>
+</body>
+</html>
