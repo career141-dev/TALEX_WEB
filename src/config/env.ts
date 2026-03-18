@@ -35,6 +35,9 @@ const envSchema = z.object({
     PAYHERE_CANCEL_URL: z.string().url(),
     PAYMENT_AMOUNT: z.string().transform(Number),
     PAYMENT_CURRENCY: z.string().default('LKR'),
+
+    SUPABASE_STORAGE_BUCKET: z.string().default('talex-applications'),
+    SIGNED_URL_EXPIRY: z.coerce.number().default(3600),
 });
 
 const parsedEnv = envSchema.safeParse(process.env);
@@ -45,3 +48,4 @@ if (!parsedEnv.success) {
 }
 
 export const config = parsedEnv.data;
+

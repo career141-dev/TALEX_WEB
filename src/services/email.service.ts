@@ -160,21 +160,8 @@ class EmailService {
   }) {
     if (!config.BREVO_API_KEY) {
       console.warn('⚠️  BREVO_API_KEY not set. Email not sent:', { to, subject });
+      return;
     }
-
-    // ── DEV LOGGING ───────────────────────────────────────────────────────────
-    // If in development, print a clear box to terminal so user can see OTPs
-    if (config.NODE_ENV === 'development') {
-      console.log(' \n' +
-        '┌── 📧 [DEV EMAIL PREVIEW] ──────────────────────────────────────────\n' +
-        `│ To:      ${toName} <${to}>\n` +
-        `│ Subject: ${subject}\n` +
-        '│ ───────────────────────────────────────────────────────────────────\n' +
-        `│ Body:    ${textContent || 'Check HTML Content'}\n` +
-        '└────────────────────────────────────────────────────────────────────\n');
-    }
-
-    if (!config.BREVO_API_KEY) return;
 
     try {
       await this.client.transactionalEmails.sendTransacEmail({

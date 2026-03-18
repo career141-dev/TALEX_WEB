@@ -38,6 +38,29 @@ export const AUDIT_ACTIONS = {
   STAFF_ACCOUNT_ACTIVATED: 'STAFF_ACCOUNT_ACTIVATED',
   GOOGLE_SIGNUP: 'GOOGLE_SIGNUP',
   GOOGLE_LOGIN: 'GOOGLE_LOGIN',
+  // Application Module
+  APPLICATION_DRAFT_SAVED: 'APPLICATION_DRAFT_SAVED',
+  APPLICATION_SUBMITTED: 'APPLICATION_SUBMITTED',
+  APPLICATION_FILE_UPLOADED: 'APPLICATION_FILE_UPLOADED',
+  ADMIN_APPLICATION_STATUS_CHANGED: 'ADMIN_APPLICATION_STATUS_CHANGED',
+  ADMIN_CATEGORY_CREATED: 'ADMIN_CATEGORY_CREATED',
+  ADMIN_CATEGORY_UPDATED: 'ADMIN_CATEGORY_UPDATED',
+  ADMIN_CATEGORY_DEACTIVATED: 'ADMIN_CATEGORY_DEACTIVATED',
+} as const;
+
+export const FILE_CONFIG = {
+  VIDEO_MAX_MB: 200,
+  VIDEO_MIME: ['video/mp4'],
+  DOCUMENT_MAX_MB: 20,
+  DOCUMENT_MIME: [
+    'application/pdf', 
+    'application/msword',
+    'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+    'application/vnd.ms-powerpoint',
+    'application/vnd.openxmlformats-officedocument.presentationml.presentation'
+  ],
+  SUPABASE_BUCKET: 'talex-applications',
+  SIGNED_URL_TTL: 3600,
 } as const;
 
 export type AuditAction = typeof AUDIT_ACTIONS[keyof typeof AUDIT_ACTIONS];

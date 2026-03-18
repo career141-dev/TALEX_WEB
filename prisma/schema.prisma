@@ -183,16 +183,123 @@ model AuditLog {
   @@map("audit_logs")
 }
 
-model Application {
-  id          String   @id @default(uuid())
-  title       String
-  description String
-  status      String   @default("pending")
-  userId      String   @map("user_id")
-  createdAt   DateTime @default(now()) @map("created_at")
-  updatedAt   DateTime @updatedAt @map("updated_at")
-  user        User     @relation(fields: [userId], references: [id])
+enum ApplicationType {
+  INDIVIDUAL
+  TEAM_COMPANY
+}
 
+enum ApplicationStatus {
+  DRAFT // Candidate saving progress
+  SUBMITTED // Candidate locked & submitted — no further edits
+  UNDER_REVIEW // Judge assigned
+  SHORTLISTED // Passed first review
+  AWARDED // Winner — terminal state
+  REJECTED // Did not progress — terminal state
+}
+
+enum CompanySize {
+  SIZE_1_50
+  SIZE_51_200
+  SIZE_201_500
+  SIZE_501_1000
+  SIZE_1001_5000
+  SIZE_5000_PLUS
+}
+
+enum ContactType {
+  CEO
+  HR_HEAD
+  PRIMARY
+  SECONDARY
+}
+
+enum FileType {
+  VIDEO
+  DOCUMENT
+}
+
+model AwardCategory {
+  id            String          @id @default(uuid())
+  name          String          @unique
+  description   String?
+  app_type      ApplicationType
+  is_active     Boolean         @default(true) @map("is_active")
+  display_order Int             @default(0) @map("display_order")
+  created_at    DateTime        @default(now()) @map("created_at")
+  updated_at    DateTime        @updatedAt @map("updated_at")
+  applications  Application[]
+
+  @@index([app_type])
+  @@index([is_active])
+  @@map("award_categories")
+}
+
+model Application {
+  id                String               @id @default(uuid())
+  // Ownership
+  user_id           String               @unique @map("user_id")
+  user              User                 @relation(fields: [user_id], references: [id])
+  // Section 1
+  application_type  ApplicationType      @map("application_type")
+  experience_years  Int?                 @map("experience_years") // INDIVIDUAL only
+  // Section 2 — Company / Organisation
+  company_name      String               @map("company_name")
+  founded_year      Int?                 @map("founded_year")
+  company_email     String               @map("company_email")
+  company_phone     String               @map("company_phone")
+  company_size      CompanySize?         @map("company_size")
+  company_website   String?              @map("company_website")
+  linkedin_profile  String?              @map("linkedin_profile")
+  company_address   String?              @map("company_address")
+  // Section 3 — Award Category
+  category_id       String               @map("category_id")
+  category          AwardCategory        @relation(fields: [category_id], references: [id])
+  // Declaration
+  declaration_agreed Boolean              @default(false) @map("declaration_agreed")
+  // Lifecycle
+  status            ApplicationStatus    @default(DRAFT) @map("status")
+  submitted_at      DateTime?            @map("submitted_at")
+  reviewed_by       String?              @map("reviewed_by")
+  reviewer_notes    String?              @map("reviewer_notes")
+  status_changed_at DateTime?            @map("status_changed_at")
+  created_at        DateTime             @default(now()) @map("created_at")
+  updated_at        DateTime             @updatedAt @map("updated_at")
+  contacts          ApplicationContact[]
+  files             ApplicationFile[]
+
+  @@index([status])
+  @@index([category_id])
   @@map("applications")
+}
+
+model ApplicationContact {
+  id             String      @id @default(uuid())
+  application_id String      @map("application_id")
+  application    Application @relation(fields: [application_id], references: [id], onDelete: Cascade)
+  contact_type   ContactType @map("contact_type")
+  full_name      String      @map("full_name")
+  designation    String
+  email          String
+  phone          String
+  created_at     DateTime    @default(now()) @map("created_at")
+  updated_at     DateTime    @updatedAt @map("updated_at")
+
+  @@map("application_contacts")
+}
+
+model ApplicationFile {
+  id             String      @id @default(uuid())
+  application_id String      @map("application_id")
+  application    Application @relation(fields: [application_id], references: [id], onDelete: Cascade)
+  file_type      FileType    @map("file_type")
+  storage_path   String      @map("storage_path") // Supabase bucket path
+  original_name  String      @map("original_name")
+  mime_type      String      @map("mime_type")
+  size_bytes     BigInt      @map("size_bytes")
+  created_at     DateTime    @default(now()) @map("created_at")
+
+  @@index([application_id])
+  @@index([file_type])
+  @@map("application_files")
 }
 

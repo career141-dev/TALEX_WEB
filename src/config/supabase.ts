@@ -45,13 +45,19 @@ if (!config.SUPABASE_SERVICE_KEY) {
     throw new Error('SUPABASE_SERVICE_KEY is required but not set. Server cannot start.');
 }
 
+// Admin client should be stateless to ensure it always uses service_role power
 export const supabaseAdmin = createClient(
     config.SUPABASE_URL,
     config.SUPABASE_SERVICE_KEY,
-    serverOptions
+    {
+        auth: {
+            autoRefreshToken: false,
+            persistSession: false,
+        }
+    }
 );
 
-// Anon client (validate user tokens)
+// Anon client (validate user tokens) - uses file-based storage for session persistence
 export const supabase = createClient(
     config.SUPABASE_URL,
     config.SUPABASE_ANON_KEY,

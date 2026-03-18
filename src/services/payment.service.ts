@@ -129,7 +129,7 @@ export const createPendingPayment = async (userId: string, ipAddress: string) =>
     return { orderId, payment };
 };
 
-// ■■ Build PayHere checkout params — v3.0: real phone + address ■■■■■■■■■■■
+// ■■ Build PayHere checkout params — v3.0: real phone + address 
 export const buildCheckoutParams = async (userId: string, orderId: string) => {
     const user = await prisma.user.findUnique({
         where: { id: userId },
@@ -169,7 +169,7 @@ export const buildCheckoutParams = async (userId: string, orderId: string) => {
     };
 };
 
-// ■■ Confirm/Fail payment from webhook ■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■
+// ■■ Confirm/Fail payment from webhook
 export const processWebhookPayment = async (payload: WebhookPayload): Promise<void> => {
     const existing = await prisma.payment.findUnique({
         where: { order_id: payload.order_id }
@@ -224,7 +224,7 @@ export const processWebhookPayment = async (payload: WebhookPayload): Promise<vo
     ]);
 };
 
-// ■■ Retry payment ■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■
+// ■■ Retry payment 
 export const retryPayment = async (userId: string, ipAddress: string) => {
     const user = await prisma.user.findUnique({
         where: { id: userId },

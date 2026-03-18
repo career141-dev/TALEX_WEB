@@ -31,17 +31,33 @@ async function main() {
   if (!user) {
     console.log('❌ User not found in Prisma database.');
   } else {
-    // Delete from Prisma (Cascades to payments, tokens, etc if configured, but we do it manually to be safe)
+    // Delete from Prisma (Manual cleanup to ensure all related data is removed)
     console.log('--- Cleaning Prisma DB ---');
     
-    const deleteLogs = prisma.paymentLog.deleteMany({ where: { order_id: { startsWith: 'TALEX-' } } });
-    const deletePayments = prisma.payment.deleteMany({ where: { user_id: user.id } });
-    const deleteTokens = prisma.emailToken.deleteMany({ where: { user_id: user.id } });
-    const deleteAudit = prisma.auditLog.deleteMany({ where: { user_id: user.id } });
-    const deleteUser = prisma.user.delete({ where: { id: user.id } });
+    const application = await prisma.application.findUnique({
+      where: { user_id: user.id },
+      select: { id: true }
+    });
 
-    await prisma.$transaction([deleteLogs, deletePayments, deleteTokens, deleteAudit, deleteUser]);
-    console.log('✅ Deleted user and related records from Prisma.');
+    const deletions = [];
+
+    if (application) {
+      deletions.push(prisma.applicationFile.deleteMany({ where: { application_id: application.id } }));
+      deletions.push(prisma.applicationContact.deleteMany({ where: { application_id: application.id } }));
+      deletions.push(prisma.application.delete({ where: { id: application.id } }));
+    }
+
+    const payments = await prisma.payment.findMany({ where: { user_id: user.id }, select: { id: true } });
+    const paymentIds = payments.map(p => p.id);
+    
+    deletions.push(prisma.paymentLog.deleteMany({ where: { payment_id: { in: paymentIds } } }));
+    deletions.push(prisma.payment.deleteMany({ where: { user_id: user.id } }));
+    deletions.push(prisma.emailToken.deleteMany({ where: { user_id: user.id } }));
+    deletions.push(prisma.auditLog.deleteMany({ where: { user_id: user.id } }));
+    deletions.push(prisma.user.delete({ where: { id: user.id } }));
+
+    await prisma.$transaction(deletions);
+    console.log('✅ Deleted user and all related records from Prisma.');
   }
 
   // 2. Delete from Supabase Auth

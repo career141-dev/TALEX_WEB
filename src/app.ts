@@ -2,16 +2,26 @@ import express from 'express';
 import helmet from 'helmet';
 import cors from 'cors';
 import cookieParser from 'cookie-parser';
+
+// Support BigInt serialization in JSON (Prisma uses BigInt for file sizes)
+(BigInt.prototype as any).toJSON = function () {
+  return this.toString();
+};
+
 import { config } from './config/env';
 import { errorHandler } from './middleware/error';
 
 import authRoutes from './routes/auth.routes';
 import adminRoutes from './routes/admin.routes';
 import paymentRoutes from './routes/payment.routes';
+import applicationRoutes from './routes/application.routes';
+import adminApplicationRoutes from './routes/adminApplication.routes';
 import { globalRateLimiter } from './middleware/rate-limiter';
 
 import cron from 'node-cron';
 import { expireStalePayments } from './jobs/expirePayments.job';
+import prisma from './lib/prisma';
+import redis from './config/redis';
 
 const app = express();
 
@@ -40,6 +50,8 @@ app.use(cookieParser());
 app.use('/api/auth', authRoutes);
 app.use('/api/admin', adminRoutes);
 app.use('/api/payment', paymentRoutes);
+app.use('/api/applications', applicationRoutes);
+app.use('/api/admin/applications', adminApplicationRoutes);
 
 // Scheduled Jobs
 // Run payment expiry check every hour at the start of the hour
@@ -48,8 +60,14 @@ cron.schedule('0 * * * *', async () => {
 });
 
 // Health Check
-app.get('/api/health', (req, res) => {
-    res.status(200).json({ status: 'ok' });
+app.get('/api/health', async (req, res) => {
+  try {
+    await prisma.$queryRaw`SELECT 1`;
+    await redis.ping();
+    res.json({ status: 'ok', db: 'ok', redis: 'ok' });
+  } catch (error: any) {
+    res.status(503).json({ status: 'degraded', error: error.message });
+  }
 });
 
 // Error Handling
