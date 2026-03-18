@@ -284,6 +284,7 @@ model ApplicationContact {
   created_at     DateTime    @default(now()) @map("created_at")
   updated_at     DateTime    @updatedAt @map("updated_at")
 
+  @@unique([application_id, contact_type])
   @@map("application_contacts")
 }
 
