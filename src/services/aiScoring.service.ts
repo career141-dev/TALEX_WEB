@@ -108,12 +108,15 @@ async function runRelevanceGate(
 ): Promise<{ passed: boolean; reason: string }> {
   const system = `You validate award submissions for TALEX Awards (HR/Talent Acquisition).
 Return ONLY JSON: { "passed": boolean, "reason": string }
-PASS if documents describe a real organisation, project, or HR initiative.
-FAIL ONLY if ALL documents are blank, lorem ipsum, or completely irrelevant spam.`;
-  const user = `REPORT EXCERPT:\n${reportText.substring(0, 1500)}\n\n`
-    + `SLIDES EXCERPT:\n${slidesText.substring(0, 800)}\n\n`
-    + `VIDEO META: ${videoMeta}\nTRANSCRIPT EXCERPT: ${transcript.substring(0, 800)}`;
-  return callGPT<{ passed: boolean; reason: string }>(system, user, 'Gate', true);
+FAIL the submission if:
+1. The content is generic filler, lorem ipsum, or testing data.
+2. The content is NOT about Human Resources, Talent Acquisition, or People Operations.
+3. The documents are basically empty or contain only headers/footers.
+PASS only if it describes a legitimate initiative, strategy, or project in the HR/Talent space.`;
+  const user = `REPORT EXCERPT:\n${reportText.substring(0, 3000)}\n\n`
+    + `SLIDES EXCERPT:\n${slidesText.substring(0, 1500)}\n\n`
+    + `VIDEO META: ${videoMeta}\nTRANSCRIPT EXCERPT: ${transcript.substring(0, 1500)}`;
+  return callGPT<{ passed: boolean; reason: string }>(system, user, 'Gate', false);
 }
 
 // 5.3 — Agent 1: Slides Agent (GPT-4o, 4-criteria rubric)
@@ -161,12 +164,12 @@ async function runVideoAgent(
 Score on FOUR criteria 0-100. Return ONLY valid JSON.
 RUBRICS:
 production_quality: use METADATA only. 90-100=720p+, 2-5min, proper encoding.
-communication_clarity: use TRANSCRIPT only. 90-100=precise vocab, fluent, minimal fillers.
-Score 50 neutral if no transcript.
-content_relevance: use TRANSCRIPT only. 90-100=clear award pitch, showcases innovation.
-Score 50 neutral if no transcript.
-delivery_quality: use TRANSCRIPT only. 90-100=clear structure: intro+problem+solution+impact.
-Score 50 neutral if no transcript.
+communication_clarity: use TRANSCRIPT only. 90-100=precise vocab, fluent.
+Score 0 if no transcript (no audio).
+content_relevance: use TRANSCRIPT only. 90-100=relevant to HR award.
+Score 0 if no transcript.
+delivery_quality: use TRANSCRIPT only. 90-100=clear pitch.
+Score 0 if no transcript.
 JSON shape: { "production_quality": 0, "communication_clarity": 0, "content_relevance": 0, "delivery_quality": 0,
 "agent_score": 0, "feedback": [], "key_points_mentioned": [],
 "transcript_available": false, "confidence": 0 }`;
@@ -223,26 +226,54 @@ export async function scoreApplication(applicationId: string): Promise<void> {
       data: { ai_score_status: 'PROCESSING' },
     });
 
-    // 3. Find file paths
-    const videoFile = app.files.find((f: any) => f.file_type === 'VIDEO');
-    const docFile = app.files.find((f: any) => ['REPORT', 'SLIDES_REPORT'].includes(f.file_purpose));
-    const slidesFile = app.files.find((f: any) => ['SLIDES', 'SLIDES_REPORT'].includes(f.file_purpose));
-    if (!videoFile && !docFile) {
-      throw new Error('No files available for scoring');
+    // 3. Find file paths (Always use the most recently uploaded versions)
+    const sortedFiles = [...app.files].sort((a: any, b: any) => 
+      new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+    );
+
+    const videoFile = sortedFiles.find((f: any) => f.file_type === 'VIDEO');
+    let docFile = sortedFiles.find((f: any) => f.file_purpose === 'REPORT');
+    let slidesFile = sortedFiles.find((f: any) => f.file_purpose === 'SLIDES');
+
+    // Fallback if no labels: prioritize by newest DOCUMENT
+    if (!docFile || !slidesFile) {
+      const docs = sortedFiles.filter((f: any) => f.file_type === 'DOCUMENT');
+      if (!docFile && docs.length > 0) docFile = docs[0];
+      if (!slidesFile && docs.length > 1) slidesFile = docs[1];
+      if (!slidesFile && docFile) slidesFile = docFile; 
+    }
+
+    if (!videoFile && !docFile) throw new Error('No files available for scoring');
+
+    console.log(`[AI-Process] Files: Report(${docFile?.original_name}) Slides(${slidesFile?.original_name}) Video(${videoFile?.original_name})`);
+    if (docFile?.id === slidesFile?.id && docFile) {
+      console.warn('[AI-Warning] Using the same file for both Report and Slides. This may reduce score accuracy.');
     }
 
     // 4. Extract content in parallel
-    const purpose = (docFile as any)?.purpose;
-    const [pdfRes, docRes, videoData] = await Promise.all([
-      docFile && (!purpose || purpose === 'report') ? extractPdfText(docFile.storage_path).catch(() => '') : Promise.resolve(''),
-      docFile && (!purpose || purpose === 'pitch') ? extractDocumentText(docFile.storage_path).catch(() => '') : Promise.resolve(''),
+    const [reportText, slidesText, videoData] = await Promise.all([
+      docFile ? (docFile.mime_type === 'application/pdf' ? extractPdfText(docFile.storage_path) : extractDocumentText(docFile.storage_path)).catch(() => '') : Promise.resolve(''),
+      slidesFile ? (slidesFile.mime_type === 'application/pdf' ? extractPdfText(slidesFile.storage_path) : extractDocumentText(slidesFile.storage_path)).catch(() => '') : Promise.resolve(''),
       videoFile ? extractVideoData(videoFile.storage_path).catch(() => ({ metaSummary: 'None', transcript: '', hasTranscript: false, duration: 0, resolution: '', format: '' })) : Promise.resolve({ metaSummary: 'None', transcript: '', hasTranscript: false, duration: 0, resolution: '', format: '' }),
     ]);
-    const reportText = pdfRes || docRes;
-    const slidesText = docRes || pdfRes;
+
+    console.log(`[AI-Debug] Report Text Length: ${reportText.length}`);
+    console.log(`[AI-Debug] Slides Text Length: ${slidesText.length}`);
+    if (reportText.length > 0) {
+      console.log('--- [REPORT EXTRACT START] ---');
+      console.log(reportText.substring(0, 2000)); // Log first 2000 chars
+      console.log('--- [REPORT EXTRACT END] ---');
+    }
+    if (slidesText.length > 0) {
+      console.log('--- [SLIDES EXTRACT START] ---');
+      console.log(slidesText.substring(0, 2000));
+      console.log('--- [SLIDES EXTRACT END] ---');
+    }
 
     // 5. Relevance Gate
     const gate = await runRelevanceGate(slidesText, reportText, videoData.metaSummary, videoData.transcript);
+    console.log(`[AI-Gate] Passed: ${gate.passed} | Reason: ${gate.reason}`);
+
     if (!gate.passed) {
       await prisma.application.update({
         where: { id: applicationId },
@@ -255,11 +286,15 @@ export async function scoreApplication(applicationId: string): Promise<void> {
     }
 
     // 6. Run 3 agents in parallel
+    console.log('[AI-Process] Running 3 specialized agents...');
     const [slidesResult, reportResult, videoResult] = await Promise.all([
       runSlidesAgent(slidesText),
       runReportAgent(reportText),
       runVideoAgent(videoData.metaSummary, videoData.transcript, videoData.hasTranscript),
     ]);
+
+    console.log(`[AI-Results] Slides: ${slidesResult.agent_score} | Report: ${reportResult.agent_score} | Video: ${videoResult.agent_score}`);
+    console.log(`[AI-Video-Debug] Has Transcript: ${videoData.hasTranscript} | Transcript Snippet: ${videoData.transcript.substring(0, 100)}...`);
 
     // 7. Server-side score calculation (no LLM arithmetic)
     const { overall, agent_breakdown, category_scores } = calcScores(slidesResult, reportResult, videoResult);

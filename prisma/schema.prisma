@@ -308,6 +308,7 @@ model ApplicationFile {
   application_id String      @map("application_id")
   application    Application @relation(fields: [application_id], references: [id], onDelete: Cascade)
   file_type      FileType    @map("file_type")
+  file_purpose   String?     @map("file_purpose") // e.g. REPORT, SLIDES, SLIDES_REPORT
   storage_path   String      @map("storage_path") // Supabase bucket path
   original_name  String      @map("original_name")
   mime_type      String      @map("mime_type")

@@ -20,6 +20,7 @@ const openai = new OpenAI({
   apiKey: config.OPENAI_API_KEY,
   baseURL: config.OPENAI_BASE_URL,
 });
+console.log(`[AI-Init] Provider: ${config.OPENAI_BASE_URL}`);
 
 
 // 1. Download any file from Supabase Storage → Buffer
@@ -130,7 +131,7 @@ export async function extractVideoData(storagePath: string): Promise<VideoData> 
     // 4b. Transcribe with OpenAI Whisper
     const transcription = await openai.audio.transcriptions.create({
       file: fs.createReadStream(tmpAudio),
-      model: 'whisper-1',
+      model: 'whisper-large-v3', // Groq-compatible
       response_format: 'text',
     });
 

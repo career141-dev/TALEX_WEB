@@ -103,7 +103,8 @@ export const uploadFile = async (req: AuthRequest, res: Response) => {
       req.file.originalname,
       req.file.mimetype,
       req.file.size,
-      fileType
+      fileType,
+      req.body.file_purpose
     );
     await auditService.logEvent({
       userId: req.user!.dbId,

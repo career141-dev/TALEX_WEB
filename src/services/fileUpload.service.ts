@@ -12,8 +12,8 @@ const DOC_MIME = [
   'application/vnd.openxmlformats-officedocument.presentationml.presentation',
 ];
 
-const MAX_VIDEO = 200 * 1024 * 1024; // 200 MB
-const MAX_DOC = 20 * 1024 * 1024; // 20 MB
+const MAX_VIDEO = 250 * 1024 * 1024; // 250 MB
+const MAX_DOC = 50 * 1024 * 1024; // 50 MB
 
 export async function uploadFile(
   applicationId: string, 
@@ -21,21 +21,40 @@ export async function uploadFile(
   originalName: string,
   mimeType: string, 
   sizeBytes: number, 
-  fileType: 'VIDEO' | 'DOCUMENT'
+  fileType: 'VIDEO' | 'DOCUMENT',
+  filePurpose?: string
 ) {
   const allowed = fileType === "VIDEO" ? VIDEO_MIME : DOC_MIME;
   if (!allowed.includes(mimeType)) throw new Error('INVALID_FILE_TYPE');
   if (sizeBytes > (fileType === 'VIDEO' ? MAX_VIDEO : MAX_DOC)) throw new Error('FILE_TOO_LARGE');
 
-  // Replace existing video if re-uploading
-  if (fileType === "VIDEO") {
-    const old = await prisma.applicationFile.findFirst({
-      where: { application_id: applicationId, file_type: "VIDEO" },
-    });
-    if (old) {
-      await supabaseAdmin.storage.from(BUCKET).remove([old.storage_path]);
-      await prisma.applicationFile.delete({ where: { id: old.id } });
+  // Cleanup old files (Replace existing)
+  const existing = await prisma.applicationFile.findFirst({
+    where: { 
+      application_id: applicationId, 
+      OR: [
+        { file_type: "VIDEO", enabled: fileType === "VIDEO" }, // Use enabled as true dummy
+        { file_purpose: filePurpose && filePurpose !== "" ? filePurpose : undefined }
+      ].filter(cond => {
+        if (fileType === 'VIDEO' && Object.keys(cond).includes('file_type')) return true;
+        if (filePurpose && Object.keys(cond).includes('file_purpose')) return true;
+        return false;
+      }) as any
+    },
+  });
+
+  // Re-write cleanup logic simply:
+  const oldFile = await prisma.applicationFile.findFirst({
+    where: {
+      application_id: applicationId,
+      ...(fileType === 'VIDEO' ? { file_type: 'VIDEO' } : { file_purpose: filePurpose })
     }
+  });
+
+  if (oldFile && (fileType === 'VIDEO' || filePurpose)) {
+    console.log(`[Upload-Cleanup] Removing old ${fileType}/${filePurpose || 'VIDEO'}: ${oldFile.original_name}`);
+    await supabaseAdmin.storage.from(BUCKET).remove([oldFile.storage_path]);
+    await prisma.applicationFile.delete({ where: { id: oldFile.id } });
   }
 
   const ext = originalName.split(".").pop() ?? "bin";
@@ -51,6 +70,7 @@ export async function uploadFile(
     data: { 
       application_id: applicationId, 
       file_type: fileType,
+      file_purpose: filePurpose,
       storage_path: path, 
       original_name: originalName,
       mime_type: mimeType, 
