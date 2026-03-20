@@ -13,7 +13,7 @@ import {
 const router = Router();
 const upload = multer({
   storage: multer.memoryStorage(),
-  limits: { fileSize: 200 * 1024 * 1024 }
+  limits: { fileSize: 50 * 1024 * 1024 } // 50MB strict limit
 });
 
 // Auth only — categories are viewable without payment

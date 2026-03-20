@@ -222,9 +222,9 @@ class AuthController {
                 return;
             }
 
-            // Wrong OTP — increment attempt counter
+            // Wrong OTP — increment attempt counter atomically
             if (emailToken.token !== otp) {
-                await prisma.emailToken.update({
+                const updatedToken = await prisma.emailToken.update({
                     where: { id: emailToken.id },
                     data: { attempts: { increment: 1 } },
                 });
@@ -234,11 +234,15 @@ class AuthController {
                     action: 'AUTH_VERIFICATION_FAILED',
                     ip: req.ip,
                     userAgent: req.headers['user-agent'],
-                    details: { currentAttempts: emailToken.attempts + 1 }
+                    details: { currentAttempts: updatedToken.attempts }
                 });
 
-                const remaining = MAX_OTP_ATTEMPTS - (emailToken.attempts + 1);
-                res.status(400).json({ success: false, error: `Invalid verification code. ${remaining} attempt${remaining === 1 ? '' : 's'} remaining.` });
+                if (updatedToken.attempts >= MAX_OTP_ATTEMPTS) {
+                    res.status(400).json({ success: false, error: 'Too many incorrect attempts. Please request a new verification code.' });
+                } else {
+                    const remaining = MAX_OTP_ATTEMPTS - updatedToken.attempts;
+                    res.status(400).json({ success: false, error: `Invalid verification code. ${remaining} attempt${remaining === 1 ? '' : 's'} remaining.` });
+                }
                 return;
             }
 
@@ -597,9 +601,9 @@ class AuthController {
                 return;
             }
 
-            // Wrong OTP — increment attempt counter
+            // Wrong OTP — increment attempt counter atomically
             if (record.token !== otp) {
-                await prisma.emailToken.update({
+                const updatedToken = await prisma.emailToken.update({
                     where: { id: record.id },
                     data: { attempts: { increment: 1 } },
                 });
@@ -609,11 +613,15 @@ class AuthController {
                     action: 'PASSWORD_RESET_FAILED',
                     ip: req.ip,
                     userAgent: req.headers['user-agent'],
-                    details: { currentAttempts: record.attempts + 1 }
+                    details: { currentAttempts: updatedToken.attempts }
                 });
 
-                const remaining = MAX_OTP_ATTEMPTS - (record.attempts + 1);
-                res.status(400).json({ success: false, error: `Invalid reset code. ${remaining} attempt${remaining === 1 ? '' : 's'} remaining.` });
+                if (updatedToken.attempts >= MAX_OTP_ATTEMPTS) {
+                    res.status(400).json({ success: false, error: 'Too many incorrect attempts. Please request a new reset code.' });
+                } else {
+                    const remaining = MAX_OTP_ATTEMPTS - updatedToken.attempts;
+                    res.status(400).json({ success: false, error: `Invalid reset code. ${remaining} attempt${remaining === 1 ? '' : 's'} remaining.` });
+                }
                 return;
             }
 

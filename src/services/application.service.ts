@@ -2,6 +2,7 @@ import prisma from '../lib/prisma';
 import { Prisma } from '@prisma/client';
 import type { ApplicationStatus, ContactType } from '@prisma/client';
 import { ApplicationDraftInput } from '../utils/validation';
+import { scoreQueue } from '../config/queue';
 
 // ■■ State Machine ■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■
 // Using strings instead of enum references to avoid prisma-client generation sync issues
@@ -54,6 +55,17 @@ export async function createOrUpdateDraft(
       throw new Error('ALREADY_SUBMITTED');
     }
 
+    if (!core.category_id) {
+      throw new Error('CATEGORY_REQUIRED');
+    }
+
+    const category = await tx.awardCategory.findUnique({
+      where: { id: core.category_id },
+    });
+    if (!category || !category.is_active) {
+      throw new Error('INVALID_CATEGORY');
+    }
+
     // Upsert core application record
     const app = await tx.application.upsert({
       where:  { user_id: userId },
@@ -102,11 +114,23 @@ export async function submitApplication(userId: string) {
   if (!app.contacts.some((c: any) => c.contact_type === 'PRIMARY')) throw new Error('CONTACTS_REQUIRED');
   if (!app.declaration_agreed) throw new Error('DECLARATION_REQUIRED');
 
-  return prisma.application.update({
+  // Update status to SUBMITTED
+  const submitted = await prisma.application.update({
     where: { id: app.id },
-    data: { status: 'SUBMITTED' as ApplicationStatus, submitted_at: new Date() },
+    data: { 
+      status: 'SUBMITTED' as ApplicationStatus, 
+      submitted_at: new Date(),
+      ai_score_status: 'PENDING', // Reset AI status on submit
+    },
     include: { contacts: true, files: true, category: true },
   });
+
+  // ■■ Enqueue AI scoring job (non-blocking) ■■■■■■■■■■■■■■■■■■■■■
+  // Candidate gets 200 OK immediately; scoring happens in background
+  await scoreQueue.add('score', { applicationId: app.id });
+  console.log(`[Submit] AI scoring queued for application: ${app.id}`);
+
+  return submitted;
 }
 
 // ■■ Admin: Transition Status ■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■

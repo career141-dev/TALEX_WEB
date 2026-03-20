@@ -178,6 +178,22 @@ export const processWebhookPayment = async (payload: WebhookPayload): Promise<vo
     if (!existing) throw new Error('PAYMENT_NOT_FOUND');
     if (existing.webhook_processed) return; // idempotency — already done
 
+    // Idempotency Check: Ensure this payment_id hasn't been used by ANY other record
+    // This is critical because payhere_payment_id is @unique in the schema.
+    const duplicate = await prisma.payment.findUnique({
+        where: { payhere_payment_id: payload.payment_id },
+        select: { order_id: true }
+    });
+
+    if (duplicate) {
+        if (duplicate.order_id === payload.order_id) {
+            console.log(`[webhook] Already processed payment_id ${payload.payment_id} for order ${payload.order_id}`);
+            return;
+        }
+        console.warn(`[webhook] CONFLICT: payment_id ${payload.payment_id} already exists for a DIFFERENT order ${duplicate.order_id}`);
+        throw new Error('DUPLICATE_PAYMENT_ID');
+    }
+
     const statusCode = parseInt(payload.status_code);
     const newStatus = PAYHERE_STATUS_MAP[statusCode];
 

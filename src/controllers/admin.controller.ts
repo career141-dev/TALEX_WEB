@@ -63,7 +63,7 @@ export const inviteUser = async (req: AuthRequest, res: Response): Promise<void>
                     lastName,
                     email,
                     password_hash: '', // Will be set during password activation
-                    company: 'Career141',
+                    company: process.env.FROM_NAME || 'Talex Awards',
                     designation: role === 'ADMIN' ? 'Administrator' : 'Judge',
                     role,
                     is_verified: false, // Activated after password setup

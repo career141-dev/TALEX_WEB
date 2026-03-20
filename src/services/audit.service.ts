@@ -19,22 +19,31 @@ class AuditService {
         ip?: string;
         userAgent?: string;
     }) {
-        try {
-            // Normalise IP to remove IPv6 prefix if present
-            const normalizedIp = ip?.startsWith('::ffff:') ? ip.slice(7) : ip;
+        let retries = 3;
+        while (retries > 0) {
+            try {
+                // Normalise IP to remove IPv6 prefix if present
+                const normalizedIp = ip?.startsWith('::ffff:') ? ip.slice(7) : ip;
 
-            await prisma.auditLog.create({
-                data: {
-                    user_id: userId || null,
-                    action,
-                    metadata: details || null,
-                    ip_address: normalizedIp,
-                    user_agent: userAgent,
-                },
-            });
-        } catch (error) {
-            console.error('❌ Failed to create audit log:', error);
-            // Non-critical failure: we don't throw to avoid crashing the request
+                await prisma.auditLog.create({
+                    data: {
+                        user_id: userId || null,
+                        action,
+                        metadata: details || null,
+                        ip_address: normalizedIp,
+                        user_agent: userAgent,
+                    },
+                });
+                return; // Success, exit loop
+            } catch (error) {
+                retries--;
+                if (retries === 0) {
+                    console.error('❌ Failed to create audit log after 3 attempts:', error);
+                } else {
+                    // Exponential backoff
+                    await new Promise(resolve => setTimeout(resolve, 500 * (4 - retries)));
+                }
+            }
         }
     }
 }

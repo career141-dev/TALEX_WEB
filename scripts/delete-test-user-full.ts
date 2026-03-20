@@ -5,6 +5,10 @@ import * as dotenv from 'dotenv';
 
 dotenv.config();
 
+console.log('--- Env Check ---');
+console.log('DATABASE_URL:', process.env.DATABASE_URL ? 'Loaded' : 'MISSING');
+console.log('SUPABASE_URL:', process.env.SUPABASE_URL ? 'Loaded' : 'MISSING');
+
 const prisma = new PrismaClient();
 const supabaseAdmin = createClient(
   process.env.SUPABASE_URL!,

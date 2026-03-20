@@ -38,6 +38,16 @@ const envSchema = z.object({
 
     SUPABASE_STORAGE_BUCKET: z.string().default('talex-applications'),
     SIGNED_URL_EXPIRY: z.coerce.number().default(3600),
+
+    // ■■ Phase 4: AI Scoring ■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■
+    OPENAI_API_KEY: z.string().min(1, 'OPENAI_API_KEY is required'),
+    OPENAI_BASE_URL: z.string().url().optional(),
+    OPENAI_MODEL: z.string().default('gpt-4o'),
+    OPENAI_MINI_MODEL: z.string().default('gpt-4o-mini'),
+    OPENAI_MAX_TOKENS: z.coerce.number().default(1500),
+    BULLMQ_REDIS_URL: z.string().url('BULLMQ_REDIS_URL must be a valid URL').refine(val => val.startsWith('rediss://') || val.startsWith('redis://'), { message: 'BULLMQ_REDIS_URL must start with rediss:// or redis://' }),
+    AI_SCORE_VERSION: z.string().default('v1.0'),
+    AI_QUEUE_NAME: z.string().default('talex-score-queue'),
 });
 
 const parsedEnv = envSchema.safeParse(process.env);

@@ -2,6 +2,7 @@ import app from './app';
 import { config } from './config/env';
 import { connectDB } from './config/db';
 import prisma from './lib/prisma';
+import { startScoringWorker } from './jobs/scoreApplication.job';
 
 const startServer = async () => {
     try {
@@ -9,6 +10,7 @@ const startServer = async () => {
 
         app.listen(config.PORT, () => {
             console.log(`🚀 Server running in ${config.NODE_ENV} mode on port ${config.PORT}`);
+            startScoringWorker();
         });
     } catch (error) {
         console.error('❌ Failed to start server:', error);

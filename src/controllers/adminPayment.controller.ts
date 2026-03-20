@@ -52,13 +52,14 @@ export const adminListPayments = async (req: AuthRequest, res: Response) => {
             where.webhook_processed = false;
         }
 
-        // Full-text search across order_id, name, email
+        // Full-text search across order_id, name, email, sanitized to prevent ILIKE wildcard injection
         if (search) {
+            const sq = (search as string).replace(/[%_]/g, '\\$&');
             where.OR = [
-                { order_id: { contains: search as string, mode: 'insensitive' } },
-                { user: { firstName: { contains: search as string, mode: 'insensitive' } } },
-                { user: { lastName: { contains: search as string, mode: 'insensitive' } } },
-                { user: { email: { contains: search as string, mode: 'insensitive' } } },
+                { order_id: { contains: sq, mode: 'insensitive' } },
+                { user: { firstName: { contains: sq, mode: 'insensitive' } } },
+                { user: { lastName: { contains: sq, mode: 'insensitive' } } },
+                { user: { email: { contains: sq, mode: 'insensitive' } } },
             ];
         }
 

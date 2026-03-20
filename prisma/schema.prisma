@@ -264,6 +264,21 @@ model Application {
   status_changed_at DateTime?            @map("status_changed_at")
   created_at        DateTime             @default(now()) @map("created_at")
   updated_at        DateTime             @updatedAt @map("updated_at")
+
+  // ■■ AI Scoring Fields (Phase 4) ■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■
+  ai_score           Float?               @map("ai_score")
+  ai_summary         String?              @map("ai_summary")
+  ai_strengths       Json?                @map("ai_strengths")      
+  ai_weaknesses      Json?                @map("ai_weaknesses")     
+  ai_suggestions     Json?                @map("ai_suggestions")    
+  ai_category_scores Json?                @map("ai_category_scores") 
+  ai_agent_breakdown Json?                @map("ai_agent_breakdown") 
+  ai_scored_at       DateTime?            @map("ai_scored_at")
+  ai_score_version   String?              @map("ai_score_version")
+  
+  // PENDING | PROCESSING | SCORED | FAILED
+  ai_score_status    String               @default("PENDING") @map("ai_score_status")
+
   contacts          ApplicationContact[]
   files             ApplicationFile[]
 
